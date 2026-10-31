@@ -1,0 +1,28 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Sagoma principale della lira, mantenuta dentro la safe-zone adaptive. -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M34,24 C27,31 25,40 27,49 C29,59 35,66 39,72 C41,76 42,80 42,85 L49,85 C49,78 47,72 43,66 C38,58 34,52 34,44 C34,38 36,33 41,29 L41,23 Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M74,24 C81,31 83,40 81,49 C79,59 73,66 69,72 C67,76 66,80 66,85 L59,85 C59,78 61,72 65,66 C70,58 74,52 74,44 C74,38 72,33 67,29 L67,23 Z" />
+
+    <!-- Traverso superiore e base. -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M39,31 C47,34 61,34 69,31 L70,37 C61,40 47,40 38,37 Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M40,79 C47,82 61,82 68,79 L70,85 C61,89 47,89 38,85 Z" />
+
+    <!-- Corde. -->
+    <path android:fillColor="#FFFFFFFF" android:pathData="M44,37 H47 V80 H44 Z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M50,38 H52.5 V81 H50 Z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M55.5,38 H58 V81 H55.5 Z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M61,37 H64 V80 H61 Z" />
+</vector>

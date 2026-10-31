@@ -1,0 +1,45 @@
+.gradle/
+build/
+**/build/
+
+local.properties
+keystore.properties
+
+*.jks
+*.keystore
+
+.idea/
+.vscode/
+
+# Output release locali (APK + update.json)
+dist/
+
+# Credenziali e configurazioni personali
+.env
+.env.*
+!*.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.p8
+*.mobileprovision
+key.properties
+signing.properties
+release-signing.properties
+release-signing.sha256
+
+# Dati runtime, diagnostica e output generati
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.sqlite3-*
+*.log
+*.hprof
+*.apk
+*.aab
+.kotlin/
+captures/
+.DS_Store
+Thumbs.db

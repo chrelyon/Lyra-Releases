@@ -1,0 +1,6 @@
+*.pdf binary
+*.png binary
+
+# Script portabili tra Windows e Linux
+gradlew text eol=lf
+*.sh text eol=lf

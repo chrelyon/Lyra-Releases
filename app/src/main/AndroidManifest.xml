@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Necessario sia per Innertube sia per gli stream googlevideo. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
+    <!-- Libreria audio locale: permesso moderno + compatibilita' Android 12 e precedenti. -->
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+
+    <!-- Playback persistente / schermata spenta / uso in auto. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+
+    <application
+        android:name=".LyraApplication"
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Lyra">
+
+
+        <!-- Condivisione privata del solo report diagnostico scelto dall'utente. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/diagnostics_file_paths" />
+        </provider>
+
+        <!--
+            Android Auto / AAOS richiedono artwork locale content://.
+            Il provider espone soltanto gli id opachi registrati da Lyra e
+            restituisce dalla cache una variante alla dimensione richiesta.
+        -->
+        <provider
+            android:name=".playback.AutoArtworkProvider"
+            android:authorities="${applicationId}.autoartwork"
+            android:exported="true"
+            android:grantUriPermissions="true" />
+
+        <!-- Dichiara Lyra come media app compatibile con Android Auto. -->
+        <meta-data
+            android:name="com.google.android.gms.car.application"
+            android:resource="@xml/automotive_app_desc" />
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop">
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+        </activity>
+
+        <!--
+            Il player non appartiene piu' alla Activity/ViewModel.
+            MediaLibraryService mantiene vivo il player ed espone playlist/brani
+            ad Android Auto oltre ai controller di sistema.
+        -->
+        <service
+            android:name=".playback.PlaybackService"
+            android:exported="true"
+            android:foregroundServiceType="mediaPlayback">
+            <intent-filter>
+                <action android:name="androidx.media3.session.MediaLibraryService" />
+                <action android:name="android.media.browse.MediaBrowserService" />
+            </intent-filter>
+        </service>
+
+        <!--
+            Consente a pulsanti Bluetooth/cuffie e System UI di riavviare il
+            MediaLibraryService e chiedere la ripresa della sessione persistita
+            anche quando Activity e processo UI non sono attivi.
+        -->
+        <receiver
+            android:name=".playback.LyraMediaButtonReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </receiver>
+
+    </application>
+
+</manifest>

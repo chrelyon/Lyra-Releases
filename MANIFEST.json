@@ -1,0 +1,17 @@
+{
+  "provenienza": "Lyra-Android-1.0.5-build42-SORGENTI-COMPLETI-PULITI.zip",
+  "archive_sha256": "2ad871aa2b26f28324f375c70c78b225cad22227992f13927f9a0786fd823364",
+  "tipo": "Android application source",
+  "versionName": "1.0.5",
+  "versionCode": 42,
+  "source_files_in_archive": 275,
+  "import_changes": [
+    "README aggiornato; originale conservato in docs/provenienza",
+    "MANIFEST aggiornato; originale conservato in docs/provenienza",
+    "gitignore esteso per credenziali, runtime e output",
+    "gradlew e script shell con terminatori LF ed eseguibili",
+    "gitattributes per terminatori script portabili"
+  ],
+  "signing_keys_included": false,
+  "official_release_assets_modified": false
+}

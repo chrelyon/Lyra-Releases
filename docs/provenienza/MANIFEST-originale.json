@@ -1,0 +1,20 @@
+{
+  "provenienza": "Lyra(2).zip",
+  "tipo": "Android application source (not desktop native)",
+  "versionName": "1.0.5",
+  "versionCode": 42,
+  "files_included": 273,
+  "excluded": [
+    "build outputs",
+    "cache",
+    "local.properties",
+    "release-signing.sha256",
+    "keystores",
+    "temporary source backups"
+  ],
+  "counts": {
+    "configuration, scripts, docs": 44,
+    "app source and assets": 142,
+    "innertube source and tests": 87
+  }
+}
