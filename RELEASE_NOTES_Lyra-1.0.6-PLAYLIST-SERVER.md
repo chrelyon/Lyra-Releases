@@ -77,3 +77,25 @@ il salvataggio della bozza non applica né pubblica la configurazione.
 
 Dopo l'abilitazione, eseguire la build completa. Firma e pubblicazione degli APK
 ufficiali restano locali e separate da questi sorgenti.
+
+## Collaudo sulla macchina Ubuntu del proprietario
+
+Gli strumenti sono indicati in `/home/chrelyon/AndroidTools`. Questa cartella non
+è montata nel cloud. È possibile evitare il blocco di build del cloud compilando
+sulla macchina locale, con i propri JDK/SDK ed emulatore già installati.
+
+Controllo iniziale, anche da una copia temporanea dello script senza progetto:
+
+```bash
+bash tools/test-local-android.sh --check
+```
+
+Il comando stampa percorsi di progetto candidati, versioni e dispositivi/AVD;
+non legge `keystore.properties` o chiavi di firma. Se necessario, specificare
+`--root /home/chrelyon/AndroidTools`, `--project /percorso/Lyra-Releases`,
+`ANDROID_HOME` e `JAVA_HOME`. Per compilare test e APK debug togliere `--check`.
+Per installare sul solo emulatore aggiungere `--install-emulator emulator-5554`;
+per avviare un AVD usare anche `--avd NOME`. Non viene eseguito alcun wipe o uninstall.
+
+La firma ufficiale resta un passaggio locale successivo, con la chiave originale:
+non serve inviarla in chat o caricarla su GitHub.
