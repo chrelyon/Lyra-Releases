@@ -34,6 +34,8 @@ import java.security.SecureRandom
  * casuale generato da Lyra e protetti da un segreto casuale conservato sul
  * dispositivo e nel codice di recupero.
  */
+class LyraServerHttpException(val status: Int, val reason: String? = null) : IllegalStateException("Lyra Server HTTP $status")
+
 object CloudProfileSync {
     private const val PREFS_NAME = "lyra_cloud_music_identity_v2"
     private const val KEY_LISTENER_ID = "listener_id"
@@ -330,6 +332,8 @@ object CloudProfileSync {
     }
 
     private fun persistIdentity(identity: Identity) {
+        val previous=appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).getString(KEY_LISTENER_ID,null)
+        if (previous!=null && previous!=identity.listenerId) app.lyra.music.playback.AutomaticPlaylistManager.clear()
         appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
             .putString(KEY_LISTENER_ID, identity.listenerId)
@@ -338,6 +342,7 @@ object CloudProfileSync {
     }
 
     private fun clearIdentity() {
+        app.lyra.music.playback.AutomaticPlaylistManager.clear()
         appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit().clear().commit()
     }
@@ -349,6 +354,33 @@ object CloudProfileSync {
         val secretBytes = decodeOrNull(parts[2]) ?: return null
         if (listenerBytes.size != 16 || secretBytes.size != 32) return null
         return Identity(parts[1], parts[2])
+    }
+
+    /** Same anonymous profile identity; never exposes the bearer to UI or playlist code. */
+    internal fun playlistOwner(): String? = if (::appContext.isInitialized &&
+        CloudProfileSyncSettings.enabled.value && CloudProfileSyncSettings.ready.value &&
+        app.lyra.music.genre.GenreClassifierSettings.connectionEnabled.value
+    ) ensureIdentity().listenerId else null
+
+    internal fun playlistState(): String? = if (::appContext.isInitialized)
+        appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).getString("playlist_v3_state", null) else null
+
+    internal fun savePlaylistState(value: String?) {
+        if (::appContext.isInitialized) appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit().putString("playlist_v3_state", value).commit()
+    }
+
+    internal suspend fun playlistRequest(method: String, path: String, payload: JSONObject? = null): JSONObject =
+        withContext(Dispatchers.IO) {
+            check(playlistOwner() != null && path.startsWith("/v3/playlists/")) { "Server playlist non disponibile" }
+            requestJson(method, path, ensureIdentity(), payload)
+        }
+
+    @Synchronized private fun installationId(): String {
+        val prefs=appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getString("installation_id", null) ?: encode(randomBytes(16)).also {
+            prefs.edit().putString("installation_id", it).commit()
+        }
     }
 
     private fun requestJson(
@@ -371,11 +403,16 @@ object CloudProfileSync {
             }
             val code = connection.responseCode
             val response = readBody(connection)
+            if (path.startsWith("/v3/") && code !in 200..299) {
+                val reason=runCatching { JSONObject(response).optString("detail") }.getOrNull()
+                    ?.takeIf { it.length<=80 && it.matches(Regex("[a-z_]+")) }
+                throw LyraServerHttpException(code,reason)
+            }
             if (code == HttpURLConnection.HTTP_NOT_FOUND) {
                 throw IllegalStateException("Nessun backup musicale associato a questo codice")
             }
             if (code !in 200..299) {
-                throw IllegalStateException("Lyra Server HTTP $code ${response.take(120)}")
+                throw IllegalStateException("Lyra Server HTTP $code")
             }
             return runCatching { JSONObject(response) }
                 .getOrElse { throw IllegalStateException("Risposta Lyra Server non valida") }
@@ -393,12 +430,16 @@ object CloudProfileSync {
         val root = rootOverride ?: CloudProfileSyncSettings.backendEndpoint.trimEnd('/')
         return (URL(root + path).openConnection() as HttpURLConnection).apply {
             requestMethod = method
-            connectTimeout = REQUEST_TIMEOUT_MS
-            readTimeout = REQUEST_TIMEOUT_MS
+            instanceFollowRedirects = false
+            connectTimeout = if (path.startsWith("/v3/")) 4000 else REQUEST_TIMEOUT_MS
+            readTimeout = if (path.startsWith("/v3/")) 4000 else REQUEST_TIMEOUT_MS
             setRequestProperty("Accept", "application/json")
             setRequestProperty("Authorization", "Bearer ${identity.secret}")
             setRequestProperty("X-Lyra-Listener", identity.listenerId)
             setRequestProperty("X-Lyra-App-Version", BuildConfig.VERSION_NAME)
+            setRequestProperty("X-Lyra-Installation", installationId())
+            setRequestProperty("X-Lyra-Device-Model", (android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL).filter { it.code in 32..126 }.take(80))
+            if (path.startsWith("/v3/")) setRequestProperty("X-Lyra-Capabilities", "server_queue_v1,boundary_commit_v1,offline_fallback_v1")
             setRequestProperty("User-Agent", "Lyra/${BuildConfig.VERSION_NAME}")
         }
     }

@@ -3,7 +3,7 @@
 Applicazione Android per l'ascolto musicale con YouTube Music/InnerTubeX,
 libreria locale, playlist personalizzate e Android Auto.
 
-Questo repository contiene ora i **sorgenti Android 1.0.5, build 42** e conserva
+Questo ramo contiene i **sorgenti Android 1.0.6, build 43, in collaudo** e conserva
 le compilazioni ufficiali già pubblicate nelle [Releases](https://github.com/chrelyon/Lyra-Releases/releases).
 L'importazione dei sorgenti non pubblica un nuovo APK e non modifica gli
 aggiornamenti disponibili nell'app.
@@ -11,16 +11,16 @@ aggiornamenti disponibili nell'app.
 ## Versione e repository
 
 - `applicationId`: `app.lyra.music`
-- `versionName`: `1.0.5`
-- `versionCode`: `42`
+- `versionName`: `1.0.6` (sviluppo)
+- `versionCode`: `43`
 - Server/dashboard: [chrelyon/Lyra](https://github.com/chrelyon/Lyra)
 - Sorgenti e release Android: questo repository, **chrelyon/Lyra-Releases**.
 
 La versione 1.0.5 usa il server Ubuntu tramite HTTPS Tailscale Funnel sulla porta
 10000, con indirizzo fissato dal codice. Il token viene configurato sul dispositivo;
-non è incluso nel repository. Il motore di playlist Android non è stato modificato
-in questa importazione e non è ancora collegato al nuovo protocollo playlist v3
-preparato nel repository server.
+non è incluso nel repository. L'integrazione con il protocollo playlist v3 è in questo ramo di sviluppo.
+[Stato, attivazione e limiti della 1.0.6](RELEASE_NOTES_Lyra-1.0.6-PLAYLIST-SERVER.md).
+`main` e gli APK ufficiali restano alla 1.0.5 finché il collaudo non è completo.
 
 ## Struttura
 

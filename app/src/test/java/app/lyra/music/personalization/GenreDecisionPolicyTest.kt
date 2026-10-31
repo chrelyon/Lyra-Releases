@@ -12,9 +12,9 @@ class GenreDecisionPolicyTest {
         assertFalse(GenreDecisionPolicy.shouldExclude(true, "accepted"))
         assertTrue(GenreDecisionPolicy.shouldExclude(true, "rejected"))
     }
-    @Test fun neverEmptyPlaybackQueue() {
+    @Test fun rejectedTracksNeverReturnWhenAllCandidatesAreRejected() {
         assertEquals(listOf("a"), GenreDecisionPolicy.keepQueue(listOf("a","b"), setOf("b")))
-        assertEquals(listOf("a","b"), GenreDecisionPolicy.keepQueue(listOf("a","b"), setOf("a","b")))
+        assertEquals(emptyList<String>(), GenreDecisionPolicy.keepQueue(listOf("a","b"), setOf("a","b")))
         assertEquals(emptyList<String>(), GenreDecisionPolicy.keepQueue(emptyList(), setOf("a")))
     }
     @Test fun onlyPilotPresetsSupported() {

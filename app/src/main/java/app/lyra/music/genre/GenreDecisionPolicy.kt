@@ -1,6 +1,6 @@
 package app.lyra.music.genre
 
-/** Pure conservative policy: unknown and unavailable labels must never starve playback. */
+/** Offline compatibility policy: a known rejection must never be reintroduced. */
 object GenreDecisionPolicy {
     private val supportedPresets = setOf("house", "techno", "dance", "rock")
 
@@ -12,8 +12,7 @@ object GenreDecisionPolicy {
     fun keepQueue(candidateIds: List<String>, rejectedIds: Set<String>): List<String> {
         if (candidateIds.isEmpty()) return emptyList()
         val accepted = candidateIds.filterNot(rejectedIds::contains)
-        // Fail-open if the whole radio would otherwise be empty.
-        return accepted.ifEmpty { candidateIds }
+        return accepted
     }
 
     /** The pilot must be HTTPS on the fixed Tailscale Funnel port. */

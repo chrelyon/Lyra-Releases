@@ -46,6 +46,7 @@ import app.lyra.music.youtube.auth.YouTubeAuthorizationManager
 import app.lyra.music.youtube.cache.YouTubeLibraryCache
 import app.lyra.music.youtube.likes.YouTubeLikesManager
 import app.lyra.music.youtube.repository.AutomaticPlaylistCatalog
+import app.lyra.music.personalization.ServerPlaylistClient
 import app.lyra.music.personalization.PersonalizedMixEngine
 import app.lyra.music.personalization.PersonalizationSettings
 import app.lyra.music.personalization.RecommendationEngine
@@ -315,8 +316,10 @@ class PlaybackService : MediaLibraryService() {
             applyNormalizationForMediaItem(mediaItem)
             audioCrossfadeCoordinator?.onTransition(mediaItem, reason)
 
+            AutomaticPlaylistManager.onPlaybackTransition(mediaId)
             syncPersistedQueueToCurrentMedia(mediaId)
             feedback?.let { handleAutomaticSessionFeedback(mediaId, it) }
+            synchronizeServerPlaylistAtBoundary(previousId, mediaId)
             maybePrefetchAutomaticQueue(mediaId)
             preResolveUpcomingAudio(mediaId)
             currentSongForLike()?.takeIf { !it.isLocal }?.let { song ->
@@ -1432,6 +1435,21 @@ class PlaybackService : MediaLibraryService() {
             it.addListener(playerListener)
         }
         player = createdPlayer
+        playbackSessionStore.restore()?.queueState?.let { queue ->
+            AutomaticPlaylistManager.restoreServerBinding(queue.title,queue.songs)
+        }
+        serviceScope.launch {
+            while (true) {
+                kotlinx.coroutines.delay(30_000)
+                val queue=playbackSessionStore.restore()?.queueState ?: continue
+                val current=player?.currentMediaItem?.mediaId ?: continue
+                if (queue.currentSong?.id==current && AutomaticPlaylistManager.hasServerIntent()) {
+                    val revision=ServerPlaylistClient.revision(queue.songs.map { it.id },queue.title,queue.repeatMode.name,queue.shuffleEnabled)
+                    AutomaticPlaylistManager.prepareServerBoundary(current,queue.songs,revision,
+                        queue.repeatMode==PlaybackRepeatMode.OFF && !queue.shuffleEnabled)
+                }
+            }
+        }
         restorePausedSessionIntoPlayer(createdPlayer)
         installNetworkAwareAudioPreload()
         audioNormalizationController = AudioNormalizationController(createdPlayer).also { controller ->
@@ -2694,11 +2712,38 @@ class PlaybackService : MediaLibraryService() {
         }
     }
 
+    /** HTTP completion can only replace the FUTURE tail of this exact live queue. */
+    private fun synchronizeServerPlaylistAtBoundary(endedId: String?, currentId: String) {
+        val binding=AutomaticPlaylistManager.serverBinding() ?: return
+        val snapshot=playbackSessionStore.restore()?.queueState ?: return
+        val revision=ServerPlaylistClient.revision(snapshot.songs.map { it.id },snapshot.title,snapshot.repeatMode.name,snapshot.shuffleEnabled)
+        serviceScope.launch {
+            val future=AutomaticPlaylistManager.serverBoundary(endedId,revision,
+                snapshot.repeatMode==PlaybackRepeatMode.OFF && !snapshot.shuffleEnabled)
+            if (binding !== AutomaticPlaylistManager.serverBinding()) return@launch
+            val live=playbackSessionStore.restore()?.queueState ?: return@launch
+            val liveRevision=ServerPlaylistClient.revision(live.songs.map { it.id },live.title,live.repeatMode.name,live.shuffleEnabled)
+            if (player?.currentMediaItem?.mediaId != currentId || liveRevision!=revision) return@launch
+            if (future != null && future.isNotEmpty()) {
+                AutomaticPlaylistManager.acceptServerTail(binding,currentId,live.songs,future)?.let {
+                    replacePersistedAutomaticQueue(it,currentId,replaceCurrent=false)
+                }
+            }
+            val updated=playbackSessionStore.restore()?.queueState ?: return@launch
+            if (player?.currentMediaItem?.mediaId==currentId) {
+                val updatedRevision=ServerPlaylistClient.revision(updated.songs.map { it.id },updated.title,updated.repeatMode.name,updated.shuffleEnabled)
+                AutomaticPlaylistManager.prepareServerBoundary(currentId,updated.songs,updatedRevision,
+                    updated.repeatMode==PlaybackRepeatMode.OFF && !updated.shuffleEnabled)
+            }
+        }
+    }
+
     private fun maybePrefetchAutomaticQueue(currentMediaId: String) {
         if (!AutomaticPlaylistManager.isActive() || automaticPrefetchInFlight) return
         val restored = playbackSessionStore.restore() ?: return
         val queue = restored.queueState
         if (!queue.hasQueue || queue.currentSong?.id != currentMediaId) return
+        if (queue.repeatMode!=PlaybackRepeatMode.OFF || queue.shuffleEnabled) return
         val remaining = queue.songs.lastIndex - queue.currentIndex
         if (remaining > AUTOMATIC_PREFETCH_THRESHOLD) return
 
@@ -3321,33 +3366,12 @@ class PlaybackService : MediaLibraryService() {
         currentMediaId: String,
         feedback: AutomaticPlaylistManager.FeedbackResult,
     ) {
-        if (!feedback.earlySkip || !AutomaticPlaylistManager.isActive()) return
+        if (!feedback.earlySkip || !AutomaticPlaylistManager.isActive() || AutomaticPlaylistManager.serverOwnsQueue() || AutomaticPlaylistManager.hasArtistConstraint()) return
 
         if (!feedback.strongIntentShift) {
             val reordered = AutomaticPlaylistManager.rerankFutureAfterFeedback(currentMediaId)
-            // Il salto NEXT ha gia' scelto un brano prima del feedback: se e'
-            // ancora dello stesso artista appena rifiutato, sostituiamo anche
-            // il brano corrente (non soltanto la coda futura).
-            val currentSong = reordered.firstOrNull { it.id == currentMediaId }
-            val cooldown = AutomaticPlaylistManager.skippedArtistKeys()
-            val currentIndex = reordered.indexOfFirst { it.id == currentMediaId }
-            val alternative = if (currentIndex >= 0 &&
-                RecommendationEngine.artistKey(currentSong?.artist) in cooldown
-            ) {
-                reordered.drop(currentIndex + 1).firstOrNull { song ->
-                    RecommendationEngine.artistKey(song.artist) !in cooldown
-                }
-            } else null
-            if (alternative != null && player?.currentMediaItem?.mediaId == currentMediaId) {
-                replacePersistedAutomaticQueue(
-                    reordered,
-                    currentMediaId,
-                    replaceCurrent = true,
-                    nextMediaId = alternative.id,
-                )
-            } else {
-                replacePersistedAutomaticQueue(reordered, currentMediaId, replaceCurrent = false)
-            }
+            // Never cut the track that has just started after the user's skip.
+            replacePersistedAutomaticQueue(reordered,currentMediaId,replaceCurrent=false)
             return
         }
 
@@ -3355,13 +3379,12 @@ class PlaybackService : MediaLibraryService() {
             runCatching { AutomaticPlaylistManager.pivotAfterRepeatedSkips(currentMediaId) }
                 .onSuccess { fresh ->
                     if (fresh.isEmpty()) return@onSuccess
-                    // Se l'utente e' ancora sul brano appena iniziato, sostituiamo
-                    // anche quello: il terzo brano non deve restare nel vecchio contesto.
+                    // Keep the current track; adapt only the future automatic tail.
                     if (player?.currentMediaItem?.mediaId == currentMediaId) {
                         replacePersistedAutomaticQueue(
                             AutomaticPlaylistManager.currentSongs(),
                             currentMediaId,
-                            replaceCurrent = true,
+                            replaceCurrent = false,
                         )
                     }
                 }

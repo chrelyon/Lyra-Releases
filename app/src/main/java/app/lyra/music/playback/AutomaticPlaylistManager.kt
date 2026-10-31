@@ -1,6 +1,10 @@
 package app.lyra.music.playback
 
 import app.lyra.music.core.model.Song
+import app.lyra.music.personalization.NoVerifiedCandidatesException
+import app.lyra.music.personalization.ServerPlaylistClient
+import app.lyra.music.personalization.ServerQueuePolicy
+import kotlinx.coroutines.CancellationException
 import app.lyra.music.genre.GenreClassifierClient
 import app.lyra.music.diagnostics.LyraLog as Log
 import app.lyra.music.personalization.AutomaticVarietyPolicy
@@ -44,9 +48,13 @@ object AutomaticPlaylistManager {
         var intentShiftCount: Int = 0,
     )
 
+    val source=kotlinx.coroutines.flow.MutableStateFlow("Locale")
     private val repository = AutomaticPlaylistRepository()
     private val mutex = Mutex()
 
+    private val generation=java.util.concurrent.atomic.AtomicLong()
+    @Volatile private var activeMediaId: String? = null
+    @Volatile private var remote: ServerPlaylistClient? = null
     @Volatile private var session: Session? = null
     @Volatile private var knownSongs: List<Song> = emptyList()
 
@@ -58,8 +66,94 @@ object AutomaticPlaylistManager {
 
     @Synchronized
     fun clear() {
+        activeMediaId=null
+        generation.incrementAndGet()
+        remote?.invalidate()
+        remote = null
+        source.value="Locale"
         session = null
         knownSongs = emptyList()
+    }
+
+    fun onPlaybackTransition(id: String) { activeMediaId=id }
+    fun hasServerIntent(): Boolean = remote != null
+    fun serverOwnsQueue(): Boolean = remote?.authoritative == true
+    fun hasArtistConstraint(): Boolean = remote?.kind=="artist"
+    private fun serverLabel()=when(remote?.kind) { "context" -> "Server · contesto appreso"; "artist" -> "Server · artista richiesto"; else -> "Server · genere verificato" }
+    fun serverBinding(): Any? = remote
+
+    private val serverGenres = mapOf("pop" to "pop", "rock" to "rock", "rap" to "hip hop",
+        "dance" to "dance", "house" to "house", "techno" to "techno", "edm" to "electronic dance music|electronic",
+        "rnb" to "rhythm and blues|soul", "indie" to "indie rock|indie pop",
+        "metal" to "metal", "jazz" to "jazz", "classica" to "classical")
+
+    /** Restore binding only for the exact saved automatic queue. Manual queues never adopt it. */
+    @Synchronized fun restoreServerBinding(title: String, songs: List<Song>) {
+        if (session != null || songs.isEmpty() || !PersonalizationSettings.enabled.value) return
+        val saved = ServerPlaylistClient.savedIntent() ?: return
+        if (saved.third != title) return
+        remote=ServerPlaylistClient(saved.first,saved.second,title,restore=true)
+        installServerSession(title,songs,ListeningProfileStore.inferContextTag(title))
+        source.value="Buffer locale · riallineamento"
+    }
+
+    private fun installServerSession(title: String, songs: List<Song>, tag: String?) {
+        session=Session(title,tag,System.nanoTime(),WatchEndpoint(videoId=songs.last().id),null,
+            songs.mapTo(mutableSetOf()) { it.id },songs.last())
+        knownSongs=songs
+        source.value=if (remote?.authoritative==true) serverLabel() else "Locale"
+    }
+
+    suspend fun prepareServerBoundary(currentId: String, queue: List<Song>, revision: String, repeatOff: Boolean) {
+        val client=remote ?: return
+        client.prepare(currentId,queue.map { it.id },revision,repeatOff)
+        if (remote===client && !client.authoritative) source.value="Locale · riallineamento in attesa"
+    }
+
+    suspend fun serverBoundary(endedId: String?, revision: String, repeatOff: Boolean): List<Song>? {
+        val client=remote ?: return null
+        return client.boundary(endedId,revision,repeatOff).takeIf { remote === client }
+    }
+
+    @Synchronized fun acceptServerTail(binding: Any?, currentId: String, queue: List<Song>, future: List<Song>): List<Song>? {
+        val client=remote ?: return null
+        if (binding !== client || session == null || queue.none { it.id==currentId }) return null
+        val byId=(queue+future).associateBy { it.id }
+        val updated=ServerQueuePolicy.replaceFuture(queue.map { it.id },currentId,future.map { it.id }).map { byId.getValue(it) }
+        knownSongs=updated
+        session!!.seenIds.addAll(future.map { it.id });session!!.tailSeed=updated.last()
+        client.applied()
+        source.value=serverLabel()
+        return updated
+    }
+
+    suspend fun startFromArtist(artist: String): StartResult {
+        val name=artist.trim().take(120)
+        require(name.isNotBlank())
+        val title="Playlist Automatica · $name"
+        if (!PersonalizationSettings.enabled.value) {
+            val expected=generation.get()
+            val songs=repository.artistSongs(name)
+            if (generation.get()!=expected) throw CancellationException("Playlist cambiata")
+            installServerSession(title,songs,null)
+            return StartResult(title,songs)
+        }
+        val client=ServerPlaylistClient("artist",name,title);remote=client
+        try {
+            val songs=client.next(emptySet())
+            if (remote !== client) throw CancellationException("Playlist cambiata")
+            installServerSession(title,songs,null)
+            return StartResult(title,songs)
+        } catch (e: CancellationException) { throw e }
+        catch (e: NoVerifiedCandidatesException) { client.localFallback() }
+        catch (_: Exception) { }
+        run {
+            // Strict local artist fallback; a generic artist radio would drift to other artists.
+            val songs=repository.artistSongs(name)
+            if (remote !== client) throw CancellationException("Playlist cambiata")
+            installServerSession(title,songs,null)
+            return StartResult(title,songs)
+        }
     }
 
     suspend fun startFromSeed(
@@ -67,7 +161,10 @@ object AutomaticPlaylistManager {
         title: String = "Radio: ${seed.title}",
         explicitContextTag: String? = null,
     ): StartResult = mutex.withLock {
+        val expectedGeneration=generation.get()
+        val expectedRemote=remote
         val batch = repository.fromSeed(seed)
+        check(remote === expectedRemote) { "Playlist cambiata" }
         val tag = explicitContextTag ?: ListeningProfileStore.inferContextTag(title)
         val presetStart = explicitContextTag?.let(AutomaticPlaylistCatalog::preset) != null
         val salt = System.currentTimeMillis() xor System.nanoTime()
@@ -97,6 +194,7 @@ object AutomaticPlaylistManager {
         val queue = if (presetStart) GenreClassifierClient.filterKnownIncompatible(tag, proposedQueue)
                     else proposedQueue
         if (queue.isEmpty()) throw IllegalStateException("Nessun brano idoneo per questa radio")
+        if (generation.get()!=expectedGeneration) throw CancellationException("Playlist cambiata")
         session = Session(
             title = title,
             contextTag = tag,
@@ -115,8 +213,31 @@ object AutomaticPlaylistManager {
     }
 
     suspend fun startFromPreset(presetId: String): StartResult {
+        val expectedGeneration=generation.get()
         val preset = AutomaticPlaylistCatalog.preset(presetId)
             ?: throw IllegalArgumentException("Preset automatico sconosciuto: $presetId")
+        val client=if (!PersonalizationSettings.enabled.value) null else serverGenres[presetId]?.let {
+            ServerPlaylistClient(if (it.contains('|')) "genres" else "genre",it,"Playlist Automatica · ${preset.title}")
+        } ?: if (presetId in setOf("relax","energia","party","focus","romantica")) {
+            ServerPlaylistClient("context",presetId,"Playlist Automatica · ${preset.title}")
+        } else null
+        remote=client
+        if (client != null) {
+            try {
+                val songs=client.next(emptySet())
+                if (remote !== client) throw CancellationException("Playlist cambiata")
+                installServerSession("Playlist Automatica · ${preset.title}",songs,presetId)
+                return StartResult("Playlist Automatica · ${preset.title}",songs)
+            } catch (e: CancellationException) { throw e }
+            catch (e: NoVerifiedCandidatesException) {
+                if (client.kind!="context") { source.value="Catalogo da verificare";throw e }
+                client.localFallback();source.value="Locale · contesto in apprendimento"
+            }
+            catch (_: Exception) {
+                if (generation.get()!=expectedGeneration) throw CancellationException("Playlist cambiata")
+                source.value="Locale · genere non verificato dal server"
+            }
+        }
         if (presetId != POP_PRESET_ID) {
             val recentSeeds = if (PersonalizationSettings.avoidRepeats.value) {
                 AutomaticPlaylistVarietyStore.recentSeeds(preset.id)
@@ -205,6 +326,7 @@ object AutomaticPlaylistManager {
                 first = if (salt % 2L == 0L) italian else international,
                 second = if (salt % 2L == 0L) international else italian,
             )
+            if (generation.get()!=expectedGeneration) throw CancellationException("Playlist cambiata")
             session = Session(
                 title = title,
                 contextTag = preset.id,
@@ -274,6 +396,7 @@ object AutomaticPlaylistManager {
         val fraction = if (safeDuration > 0L) {
             (safeListened.toDouble() / safeDuration.toDouble()).coerceIn(0.0, 1.0)
         } else 0.0
+        if (manualSkip) remote?.feedbackChanged()
         val earlySkip = manualSkip && safeDuration > 0L && fraction < 0.30 && safeListened < 45_000L
 
         val artistKey = RecommendationEngine.artistKey(song.artist)
@@ -338,11 +461,11 @@ object AutomaticPlaylistManager {
      */
     suspend fun pivotAfterRepeatedSkips(currentSongId: String): List<Song> = mutex.withLock {
         val current = session ?: return@withLock emptyList()
-        if (current.consecutiveEarlySkips < 2) return@withLock emptyList()
+        if (current.consecutiveEarlySkips < 2 || hasArtistConstraint()) return@withLock emptyList()
 
         val currentIndex = knownSongs.indexOfFirst { it.id == currentSongId }
         if (currentIndex < 0) return@withLock emptyList()
-        val prefix = knownSongs.take(currentIndex)
+        val prefix = knownSongs.take(currentIndex + 1)
         val avoided = current.skippedArtists.toSet()
 
         val explicitPreset = current.contextTag?.takeIf { AutomaticPlaylistCatalog.preset(it) != null }
@@ -388,6 +511,7 @@ object AutomaticPlaylistManager {
             .filterNot { song -> song.id in priorSeen || prefix.any { it.id == song.id } })
         if (fresh.isEmpty()) return@withLock emptyList()
 
+        if (session !== current || serverOwnsQueue() || (activeMediaId!=null && activeMediaId!=currentSongId)) return@withLock emptyList()
         current.contextTag = newContext
         current.endpoint = batch.endpoint
         current.continuation = batch.continuation
@@ -408,6 +532,31 @@ object AutomaticPlaylistManager {
 
     suspend fun loadMore(): List<Song> = mutex.withLock {
         val current = session ?: return@withLock emptyList()
+        val client=remote
+        if (client?.authoritative == true) {
+            try {
+                val fresh=client.next(current.seenIds)
+                if (session !== current || remote !== client) return@withLock emptyList()
+                val unique=fresh.filterNot { it.id in current.seenIds }
+                current.seenIds.addAll(unique.map { it.id })
+                knownSongs=knownSongs+unique
+                source.value=serverLabel()
+                unique.lastOrNull()?.let { current.tailSeed=it }
+                return@withLock unique
+            } catch (e: CancellationException) { throw e }
+            catch (e: NoVerifiedCandidatesException) {
+                if (client.kind !in setOf("artist","context")) { source.value="Catalogo da verificare";return@withLock emptyList() }
+                client.localFallback()
+            }
+            catch (_: Exception) { client.localFallback();source.value="Locale · server non disponibile" }
+        }
+        if (client?.kind == "artist") {
+            val fresh=repository.artistSongs(client.value).filterNot { it.id in current.seenIds }
+            if (session !== current || remote !== client || client.authoritative) return@withLock emptyList()
+            current.seenIds.addAll(fresh.map { it.id })
+            knownSongs=knownSongs+fresh
+            return@withLock fresh
+        }
 
         if (current.balancedPop) {
             val firstBatch = runCatching {
@@ -431,6 +580,7 @@ object AutomaticPlaylistManager {
             if (firstBatch == null && secondBatch == null) {
                 throw IllegalStateException("Impossibile continuare il mix Pop")
             }
+            if (session !== current || remote !== client || client?.authoritative==true) return@withLock emptyList()
             firstBatch?.let {
                 current.endpoint = it.endpoint
                 current.continuation = it.continuation
@@ -472,9 +622,11 @@ object AutomaticPlaylistManager {
                 salt = current.sessionSalt xor (knownSongs.size + 1).toLong(),
             )
             val fresh = mergeAlternating(firstDiverse, secondDiverse)
-                .filter { current.seenIds.add(it.id) }
+                .filterNot { it.id in current.seenIds }
             firstDiverse.lastOrNull()?.let { current.tailSeed = it }
             secondDiverse.lastOrNull()?.let { current.secondaryTailSeed = it }
+            if (session !== current || remote !== client || client?.authoritative==true) return@withLock emptyList()
+            current.seenIds.addAll(fresh.map { it.id })
             if (fresh.isNotEmpty()) {
                 knownSongs = knownSongs + fresh
                 AutomaticPlaylistVarietyStore.remember(POP_PRESET_ID, emptyList(), fresh, recordOpening = false)
@@ -518,7 +670,9 @@ object AutomaticPlaylistManager {
             )
         } else ranked
         val fresh = GenreClassifierClient.filterKnownIncompatible(current.contextTag, diversified)
-            .filter { current.seenIds.add(it.id) }
+            .filterNot { it.id in current.seenIds }
+        if (session !== current || remote !== client || client?.authoritative==true) return@withLock emptyList()
+        current.seenIds.addAll(fresh.map { it.id })
         if (fresh.isNotEmpty()) {
             current.tailSeed = fresh.last()
             knownSongs = knownSongs + fresh

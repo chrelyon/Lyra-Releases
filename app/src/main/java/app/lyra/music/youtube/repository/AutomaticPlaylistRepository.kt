@@ -29,6 +29,16 @@ class AutomaticPlaylistRepository {
         val international: Batch,
     )
 
+    suspend fun artistSongs(artist: String): List<Song> {
+        val result=withTimeoutOrNull(SEARCH_TIMEOUT_MS) {
+            YouTube.search(query=artist,filter=YouTube.SearchFilter.FILTER_SONG).getOrThrow()
+        } ?: throw IllegalStateException("Ricerca artista non disponibile")
+        return result.items.filterIsInstance<SongItem>()
+            .filter { item -> app.lyra.music.personalization.RequestedArtistPolicy.matches(artist,item.artists.map { it.name }) }
+            .map(SongItem::toAutomaticSong).distinctBy { it.id }.take(20)
+            .also { check(it.isNotEmpty()) { "Nessun brano per questo artista" } }
+    }
+
     suspend fun findSeed(
         presetId: String,
         excludingIds: Set<String> = emptySet(),
@@ -158,27 +168,27 @@ object AutomaticPlaylistCatalog {
             "canzoni romantiche italiane", "European love songs", "romantic pop Europe"),
         preset("pop", "Pop", "Pop italiano e internazionale",
             "pop Italia hits", "Italian pop hits", "global pop hits", "international pop hits"),
-        preset("rock", "Rock", "Rock italiano ed europeo",
+        preset("rock", "Rock", "Rock e preferenze personali",
             "rock Italia", "European rock", "Italian rock hits"),
-        preset("rap", "Hip Hop e Rap", "Rap italiano ed europeo",
+        preset("rap", "Hip Hop e Rap", "Hip Hop e Rap",
             "rap italiano", "European hip hop", "hip hop Italia"),
-        preset("dance", "Dance", "Dance italiana ed europea",
+        preset("dance", "Dance", "Dance",
             "dance Italia hits", "European dance hits", "dance Europe"),
         preset("house", "House", "House, deep e tech house",
             "house Italia", "European house", "deep house Europe", "tech house Europe"),
         preset("techno", "Techno", "Techno e melodic techno",
             "techno Italia", "European techno", "Berlin techno", "melodic techno Europe"),
-        preset("edm", "EDM ed Elettronica", "EDM ed elettronica europea",
+        preset("edm", "EDM ed Elettronica", "EDM ed elettronica",
             "EDM Italia", "European electronic music", "EDM Europe"),
-        preset("indie", "Indie", "Indie italiano ed europeo",
+        preset("indie", "Indie", "Indie rock e indie pop",
             "indie Italia", "European indie", "Italian indie"),
         preset("rnb", "R&B e Soul", "R&B e soul",
             "R&B Italia", "European R&B", "soul Europe"),
-        preset("metal", "Metal", "Metal italiano ed europeo",
+        preset("metal", "Metal", "Metal",
             "metal Italia", "European metal", "Italian metal"),
-        preset("jazz", "Jazz", "Jazz italiano ed europeo",
+        preset("jazz", "Jazz", "Jazz",
             "jazz Italia", "European jazz", "Italian jazz"),
-        preset("classica", "Classica", "Musica classica europea",
+        preset("classica", "Classica", "Musica classica",
             "classical Europe", "musica classica Italia", "European classical music"),
     )
 

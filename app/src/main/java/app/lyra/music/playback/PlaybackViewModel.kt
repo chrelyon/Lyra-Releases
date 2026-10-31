@@ -306,6 +306,21 @@ class PlaybackViewModel(
         }
     }
 
+    fun startAutomaticArtist(artist: String) {
+        if (_automaticPlaylistLoading.value || artist.isBlank()) return
+        val generation=++automaticGeneration
+        AutomaticPlaylistManager.clear()
+        _automaticPlaylistLoading.value=true;_automaticPlaylistError.value=null
+        viewModelScope.launch {
+            try {
+                val result=AutomaticPlaylistManager.startFromArtist(artist)
+                if (generation==automaticGeneration) playQueue(result.songs,0,result.title,preserveAutomaticSession=true)
+            } catch (canceled: kotlinx.coroutines.CancellationException) { throw canceled }
+            catch (_: Exception) { if (generation==automaticGeneration) _automaticPlaylistError.value="Impossibile creare la playlist per questo artista" }
+            finally { _automaticPlaylistLoading.value=false }
+        }
+    }
+
     private fun applyAutomaticStartResult(
         result: AutomaticPlaylistManager.StartResult,
         expectedSeedId: String,
@@ -629,6 +644,8 @@ class PlaybackViewModel(
             return
         }
 
+        automaticGeneration++
+        AutomaticPlaylistManager.clear()
         val reordered = queue.songs.toMutableList()
         val movedSong = reordered.removeAt(fromIndex)
         reordered.add(toIndex, movedSong)
@@ -662,6 +679,8 @@ class PlaybackViewModel(
         val queue = _queueState.value
         if (index !in queue.songs.indices || queue.isChangingTrack) return
 
+        automaticGeneration++
+        AutomaticPlaylistManager.clear()
         val removedSong = queue.songs[index]
         val removedCurrent = index == queue.currentIndex
         val remaining = queue.songs.toMutableList().apply { removeAt(index) }
