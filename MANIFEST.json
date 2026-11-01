@@ -2,8 +2,8 @@
   "provenienza": "Lyra-Android-1.0.5-build42-SORGENTI-COMPLETI-PULITI.zip",
   "archive_sha256": "2ad871aa2b26f28324f375c70c78b225cad22227992f13927f9a0786fd823364",
   "tipo": "Android application source",
-  "versionName": "1.0.6",
-  "versionCode": 43,
+  "versionName": "1.0.7",
+  "versionCode": 45,
   "source_files_in_archive": 275,
   "import_changes": [
     "README aggiornato; originale conservato in docs/provenienza",
@@ -14,12 +14,14 @@
   ],
   "signing_keys_included": false,
   "official_release_assets_modified": false,
-  "status": "development-full-apk-build-blocked-by-jitpack-policy",
+  "status": "release-preparation-full-apk-build-blocked-by-network-policy",
   "source_archive_version": "1.0.5 build 42",
   "development_changes": [
     "server playlist v3 integration",
     "exact artist credits and genre constraints",
     "boundary-only future queue replacement",
-    "incremental metadata and deduplicated feedback"
+    "incremental metadata and deduplicated feedback",
+    "advanced artist and album search",
+    "explicit unsigned build for local release signing"
   ]
 }

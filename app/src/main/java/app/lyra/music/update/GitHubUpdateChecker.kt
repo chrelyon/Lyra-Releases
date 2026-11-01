@@ -90,7 +90,7 @@ object GitHubUpdateChecker {
                             metadataUrl = browserUrl
                         }
 
-                        name.endsWith(".apk", ignoreCase = true) && apkUrl == null -> {
+                        name.endsWith(".apk", ignoreCase = true) && apkUrl == null && !name.contains("unsigned", ignoreCase = true) -> {
                             apkUrl = browserUrl
                             apkName = name
                         }

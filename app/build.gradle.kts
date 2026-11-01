@@ -20,10 +20,12 @@ val releaseBuildRequested = gradle.startParameter.taskNames.any {
     it.contains("release", ignoreCase = true)
 }
 
+val unsignedRelease = providers.gradleProperty("lyraUnsignedRelease").orNull == "true"
+
 val keystoreProperties = Properties().apply {
-    if (keystorePropertiesFile.exists()) {
+    if (!unsignedRelease && keystorePropertiesFile.exists()) {
         keystorePropertiesFile.inputStream().use { load(it) }
-    } else if (releaseBuildRequested) {
+    } else if (releaseBuildRequested && !unsignedRelease) {
         error(
             "Missing keystore.properties in the project root. " +
                 "Create it before building a signed Lyra release."
@@ -32,9 +34,10 @@ val keystoreProperties = Properties().apply {
 }
 
 fun releaseSigningProperty(name: String): String? {
+    if (unsignedRelease) return null
     val value = keystoreProperties.getProperty(name)?.trim().orEmpty()
     if (value.isNotEmpty()) return value
-    if (releaseBuildRequested) {
+    if (releaseBuildRequested && !unsignedRelease) {
         error("Missing '$name' in keystore.properties")
     }
     return null
@@ -50,8 +53,8 @@ android {
         minSdk = 26
         targetSdk = 36
 
-        versionCode = 43
-        versionName = "1.0.6"
+        versionCode = 45
+        versionName = "1.0.7"
 
         buildConfigField("String", "INNERTUBEX_VERSION", "\"$innerTubeXVersion\"")
     }
@@ -75,7 +78,7 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("release")
+            signingConfig = if (unsignedRelease) null else signingConfigs.getByName("release")
         }
     }
 

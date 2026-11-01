@@ -31,11 +31,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Button
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -70,7 +65,6 @@ fun DiscoverScreen(
     val automaticPlaylistLoading by playbackViewModel.automaticPlaylistLoading.collectAsStateWithLifecycle()
     val automaticPlaylistError by playbackViewModel.automaticPlaylistError.collectAsStateWithLifecycle()
 
-    var artistQuery by remember { mutableStateOf("") }
     val selectedFolder = folders.firstOrNull { it.id == selectedFolderId }
     val selectedGroupSummary = groups.firstOrNull { it.id == selectedGroupId }
 
@@ -163,11 +157,12 @@ fun DiscoverScreen(
                     if (selectedFolderId==DiscoverViewModel.AUTOMATIC_FOLDER_ID) item {
                         Text(automaticSource,style=MaterialTheme.typography.bodySmall,
                             color=MaterialTheme.colorScheme.onSurfaceVariant,modifier=Modifier.padding(bottom=8.dp))
-                        OutlinedTextField(value=artistQuery,onValueChange={ artistQuery=it.take(120) },
-                            label={ Text("Cerca artista") },singleLine=true,modifier=Modifier.fillMaxWidth())
-                        Button(onClick={ playbackViewModel.startAutomaticArtist(artistQuery) },
-                            enabled=artistQuery.isNotBlank() && !automaticPlaylistLoading,
-                            modifier=Modifier.padding(vertical=8.dp)) { Text("Crea playlist") }
+                        AdvancedPlaylistSearch(busy = automaticPlaylistLoading, onStart = { target ->
+                            when (target.kind) {
+                                app.lyra.music.youtube.repository.PlaylistSearchKind.ARTIST -> playbackViewModel.startAutomaticArtist(target.title)
+                                app.lyra.music.youtube.repository.PlaylistSearchKind.ALBUM -> playbackViewModel.startAutomaticAlbum(target.id, target.title)
+                            }
+                        })
                     }
 
                     item {

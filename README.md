@@ -1,3 +1,8 @@
+## Preparazione Android 1.0.7 build 45
+
+Vedi [note 1.0.7](RELEASE_NOTES_Lyra-1.0.7-CATALOGO.md) per build non firmata,
+firma locale e pubblicazione degli asset di aggiornamento. APK non ancora generato.
+
 # Lyra Android
 
 Applicazione Android per l'ascolto musicale con YouTube Music/InnerTubeX,

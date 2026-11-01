@@ -65,6 +65,7 @@ class PlaybackSessionStore(context: Context) {
                     currentIndex = currentIndex,
                     isChangingTrack = false,
                     shuffleEnabled = root.optBoolean("shuffleEnabled", false),
+                    allowSmartContinuation = root.optBoolean("allowSmartContinuation", true),
                     repeatMode = repeatMode,
                     resumePositionMs = safePositionMs,
                 ),
@@ -95,6 +96,7 @@ class PlaybackSessionStore(context: Context) {
             .put("title", queueState.title)
             .put("currentIndex", queueState.currentIndex)
             .put("shuffleEnabled", queueState.shuffleEnabled)
+            .put("allowSmartContinuation", queueState.allowSmartContinuation)
             .put("repeatMode", queueState.repeatMode.name)
             .put("songs", queueState.songs.toJsonArray())
             .put(

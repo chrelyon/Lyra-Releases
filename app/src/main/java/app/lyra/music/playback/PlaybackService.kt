@@ -2894,6 +2894,7 @@ class PlaybackService : MediaLibraryService() {
                     }
                     if (
                         PersonalizationSettings.continueSimilar.value &&
+                        queue.allowSmartContinuation &&
                         queue.currentSong?.isLocal == false
                     ) {
                         Log.d(

@@ -1,3 +1,11 @@
+## 1.0.7 — build 45 (preparazione)
+
+- Include Cerca avanzato artisti/album della build 44.
+- Build release non firmata esplicita, firma locale e manifesto update.json.
+- Workflow manuale o su push al ramo di sviluppo per artifact unsigned; nessuna pubblicazione automatica.
+- Esclusione degli asset unsigned dalla selezione dell’APK di aggiornamento.
+- Build completa cloud bloccata dalle dipendenze di rete; APK non disponibile.
+
 # Changelog Lyra
 
 ## 1.0.2 — Test preparazione classifier (build 39)

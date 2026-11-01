@@ -10,6 +10,7 @@ data class PlaybackQueueUiState(
     val shuffleEnabled: Boolean = false,
     val repeatMode: PlaybackRepeatMode = PlaybackRepeatMode.OFF,
     val resumePositionMs: Long = 0L,
+    val allowSmartContinuation: Boolean = true,
 ) {
     val hasQueue: Boolean
         get() = songs.isNotEmpty() && currentIndex in songs.indices

@@ -105,6 +105,7 @@ class PlaybackViewModel(
         queueTitle: String,
         preserveAutomaticSession: Boolean = false,
         forceSequential: Boolean = false,
+        allowSmartContinuation: Boolean = true,
     ) {
         if (songs.isEmpty() || startIndex !in songs.indices) return
         if (!preserveAutomaticSession) {
@@ -134,6 +135,7 @@ class PlaybackViewModel(
 
         _queueState.value = PlaybackQueueUiState(
             title = queueTitle,
+            allowSmartContinuation = allowSmartContinuation,
             songs = arrangedSongs,
             currentIndex = arrangedIndex,
             isChangingTrack = true,
@@ -318,6 +320,28 @@ class PlaybackViewModel(
             } catch (canceled: kotlinx.coroutines.CancellationException) { throw canceled }
             catch (_: Exception) { if (generation==automaticGeneration) _automaticPlaylistError.value="Impossibile creare la playlist per questo artista" }
             finally { _automaticPlaylistLoading.value=false }
+        }
+    }
+
+    /** The selected album is a finite, ordered queue; never reinterpret it as a genre or artist radio. */
+    fun startAutomaticAlbum(browseId: String, title: String) {
+        if (_automaticPlaylistLoading.value || browseId.isBlank()) return
+        val generation = ++automaticGeneration
+        AutomaticPlaylistManager.clear()
+        _automaticPlaylistLoading.value = true
+        _automaticPlaylistError.value = null
+        viewModelScope.launch {
+            try {
+                val songs = app.lyra.music.youtube.repository.AdvancedPlaylistSearchRepository().albumSongs(browseId)
+                if (generation == automaticGeneration) {
+                    playQueue(songs, 0, "Album · $title", forceSequential = true, allowSmartContinuation = false)
+                }
+            } catch (_: kotlinx.coroutines.TimeoutCancellationException) {
+                if (generation == automaticGeneration) _automaticPlaylistError.value = "Caricamento album scaduto. Riprova."
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (_: Exception) {
+                if (generation == automaticGeneration) _automaticPlaylistError.value = "Impossibile caricare l'album selezionato"
+            } finally { _automaticPlaylistLoading.value = false }
         }
     }
 
