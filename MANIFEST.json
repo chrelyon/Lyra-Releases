@@ -14,7 +14,7 @@
   ],
   "signing_keys_included": false,
   "official_release_assets_modified": false,
-  "status": "release-preparation-full-apk-build-blocked-by-network-policy",
+  "status": "unsigned-apk-built-awaiting-local-signature",
   "source_archive_version": "1.0.5 build 42",
   "development_changes": [
     "server playlist v3 integration",
@@ -23,5 +23,12 @@
     "incremental metadata and deduplicated feedback",
     "advanced artist and album search",
     "explicit unsigned build for local release signing"
-  ]
+  ],
+  "apk_artifact": {
+    "url": "https://github.com/chrelyon/Lyra-Releases/actions/runs/41327400653/artifacts/13091464676",
+    "run_id": 41327400653,
+    "source_commit": "195e249ecc14e0252b37a530982fb35c50407f98",
+    "zip_sha256": "d30a8cdddb78e9206b104be9e71d796d290b926ee4e52368f4ee72bde54ef782",
+    "signed": false
+  }
 }

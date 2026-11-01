@@ -1,10 +1,10 @@
-## 1.0.7 — build 45 (preparazione)
+## 1.0.7 — build 45 (APK unsigned compilato)
 
 - Include Cerca avanzato artisti/album della build 44.
 - Build release non firmata esplicita, firma locale e manifesto update.json.
 - Workflow manuale o su push al ramo di sviluppo per artifact unsigned; nessuna pubblicazione automatica.
 - Esclusione degli asset unsigned dalla selezione dell’APK di aggiornamento.
-- Build completa cloud bloccata dalle dipendenze di rete; APK non disponibile.
+- Build release GitHub Actions riuscita; APK unsigned disponibile per firma locale.
 
 # Changelog Lyra
 

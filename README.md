@@ -1,7 +1,8 @@
 ## Preparazione Android 1.0.7 build 45
 
 Vedi [note 1.0.7](RELEASE_NOTES_Lyra-1.0.7-CATALOGO.md) per build non firmata,
-firma locale e pubblicazione degli asset di aggiornamento. APK non ancora generato.
+firma locale e pubblicazione degli asset di aggiornamento.
+[APK non firmato 1.0.7 build 45](https://github.com/chrelyon/Lyra-Releases/actions/runs/41327400653/artifacts/13091464676) compilato con successo su GitHub Actions.
 
 # Lyra Android
 

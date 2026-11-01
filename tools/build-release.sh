@@ -16,7 +16,10 @@ if [[ "${1:-}" == "--unsigned" ]]; then
   ./gradlew assembleRelease -PlyraUnsignedRelease=true
   mkdir -p "$ROOT/dist/unsigned"
   cp "$ROOT/app/build/outputs/apk/release/app-release-unsigned.apk" "$ROOT/dist/unsigned/Lyra-$VERSION_NAME-unsigned.apk"
-  sha256sum "$ROOT/dist/unsigned/Lyra-$VERSION_NAME-unsigned.apk" > "$ROOT/dist/unsigned/SHA256SUMS.txt"
+  (
+    cd "$ROOT/dist/unsigned"
+    sha256sum "Lyra-$VERSION_NAME-unsigned.apk" > SHA256SUMS.txt
+  )
   echo "APK non firmato: dist/unsigned/Lyra-$VERSION_NAME-unsigned.apk"
   echo "Firma locale necessaria; nessun update.json pubblicabile è stato generato."
   exit 0
