@@ -102,7 +102,7 @@ class PlaybackController(
             val mediaItem = PlaybackMediaItemFactory.playable(
                 source = source,
                 song = song,
-                artworkUri = AutoArtworkProvider.register(appContext, song.thumbnailUrl),
+                artworkUri = AutoArtworkProvider.register(appContext, song.artworkUrlForPlayback),
                 contextLabel = contextLabel,
             )
 
@@ -134,7 +134,7 @@ class PlaybackController(
         withController { mediaController ->
             val mediaItem = PlaybackMediaItemFactory.local(
                 song = song,
-                artworkUri = AutoArtworkProvider.register(appContext, song.thumbnailUrl),
+                artworkUri = AutoArtworkProvider.register(appContext, song.artworkUrlForPlayback),
                 contextLabel = contextLabel,
             )
             val safeStartPositionMs = startPositionMs.coerceAtLeast(0L)
@@ -168,7 +168,7 @@ class PlaybackController(
             val items = songs.map { song ->
                 PlaybackMediaItemFactory.deferred(
                     song,
-                    artworkUri = AutoArtworkProvider.register(appContext, song.thumbnailUrl),
+                    artworkUri = AutoArtworkProvider.register(appContext, song.artworkUrlForPlayback),
                     contextLabel = contextLabel,
                 )
             }
@@ -190,7 +190,7 @@ class PlaybackController(
         withController { mediaController ->
             val item = PlaybackMediaItemFactory.deferred(
                 song,
-                artworkUri = AutoArtworkProvider.register(appContext, song.thumbnailUrl),
+                artworkUri = AutoArtworkProvider.register(appContext, song.artworkUrlForPlayback),
                 contextLabel = contextLabel,
             )
             mediaController.addMediaItem(index.coerceIn(0, mediaController.mediaItemCount), item)
@@ -204,7 +204,7 @@ class PlaybackController(
             val items = additional.map { song ->
                 PlaybackMediaItemFactory.deferred(
                     song,
-                    artworkUri = AutoArtworkProvider.register(appContext, song.thumbnailUrl),
+                    artworkUri = AutoArtworkProvider.register(appContext, song.artworkUrlForPlayback),
                     contextLabel = contextLabel,
                 )
             }
