@@ -94,7 +94,7 @@ object PlaybackMediaItemFactory {
             .apply {
                 if (!extras.isEmpty) setExtras(extras)
                 val artwork = artworkUri
-                    ?: song.thumbnailUrl
+                    ?: song.artworkUrlForPlayback
                         ?.takeIf { it.isNotBlank() }
                         ?.let(Uri::parse)
                 artwork?.let(::setArtworkUri)
