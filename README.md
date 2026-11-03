@@ -3,7 +3,7 @@
 Applicazione Android per l'ascolto musicale con YouTube Music/InnerTubeX,
 libreria locale, playlist personalizzate e Android Auto.
 
-Questo repository contiene ora i **sorgenti Android 1.0.5, build 42** e conserva
+Questo repository contiene ora i **sorgenti Android 1.0.6 RC, build 43** e conserva
 le compilazioni ufficiali già pubblicate nelle [Releases](https://github.com/chrelyon/Lyra-Releases/releases).
 L'importazione dei sorgenti non pubblica un nuovo APK e non modifica gli
 aggiornamenti disponibili nell'app.
@@ -11,8 +11,8 @@ aggiornamenti disponibili nell'app.
 ## Versione e repository
 
 - `applicationId`: `app.lyra.music`
-- `versionName`: `1.0.5`
-- `versionCode`: `42`
+- `versionName`: `1.0.6`
+- `versionCode`: `43`
 - Server/dashboard: [chrelyon/Lyra](https://github.com/chrelyon/Lyra)
 - Sorgenti e release Android: questo repository, **chrelyon/Lyra-Releases**.
 
@@ -33,6 +33,19 @@ preparato nel repository server.
 - [Verifica e provenienza dell'importazione](docs/IMPORTAZIONE_SORGENTI.md).
 - [Documentazione originale allegata](docs/provenienza/README-sorgenti-originale.md):
   contiene anche indicazioni storiche per versioni precedenti.
+
+## Release candidata 1.0.6
+
+La candidata integra selezione dei brani per genere *verificato nel server*,
+fallback cover YouTube e test aggiornati. La versione del server richiesta e'
+Lyra **0.3.21**, che include `POST /v1/playlists/verified-genre`.
+
+L'APK di produzione non e' inclusa nel repository e va firmata localmente
+con la **stessa** chiave delle precedenti release, dopo aver provato la build
+di debug. [Guida passo passo Windows](docs/ANDROID_1.0.6_LOCAL_BUILD.md).
+
+Questa e' una *release candidate* in ramo separato: l'app 1.0.5 su `main`
+e il suo certificato di firma non vengono modificati.
 
 ## Sviluppo
 
