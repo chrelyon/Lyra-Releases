@@ -110,9 +110,12 @@ else {
             -Filter "Lyra-*.apk" `
             -File `
             -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -ne "Lyra-1.0.8.apk" } |
         Sort-Object LastWriteTime -Descending |
         Select-Object -First 1
 
+    # Never establish trust using the same candidate version just built.
+    # Prefer an independently signed previous release or pinned fingerprint.
     if ($null -eq $previous) {
         throw @"
 Fingerprint Release non inizializzato.
@@ -123,7 +126,7 @@ Lascia in:
 una APK Release precedente sicuramente firmata
 con la tua key, ad esempio:
 
-  Lyra-0.3.21.apk
+  Lyra-1.0.7.apk
 
 e ripeti la build.
 "@
