@@ -2,6 +2,7 @@ package app.lyra.music.playback
 
 import app.lyra.music.core.model.Song
 import app.lyra.music.genre.GenreClassifierClient
+import app.lyra.music.genre.VerifiedGenrePlaylistClient
 import app.lyra.music.diagnostics.LyraLog as Log
 import app.lyra.music.personalization.AutomaticVarietyPolicy
 import app.lyra.music.personalization.RecommendationEngine
@@ -42,6 +43,7 @@ object AutomaticPlaylistManager {
         val skippedArtists: MutableSet<String> = mutableSetOf(),
         val positiveArtists: MutableSet<String> = mutableSetOf(),
         var intentShiftCount: Int = 0,
+        val strictGenre: String? = null,
     )
 
     private val repository = AutomaticPlaylistRepository()
@@ -117,6 +119,43 @@ object AutomaticPlaylistManager {
     suspend fun startFromPreset(presetId: String): StartResult {
         val preset = AutomaticPlaylistCatalog.preset(presetId)
             ?: throw IllegalArgumentException("Preset automatico sconosciuto: $presetId")
+
+        // Track-level evidence is the only source of strict genre playlists.
+        // Never fill a confirmed techno request with unrelated YTM Automix.
+        if (VerifiedGenrePlaylistClient.enabled(presetId)) {
+            val verified = VerifiedGenrePlaylistClient.fetch(presetId, limit = 40)
+            return mutex.withLock {
+                val title = "Playlist Automatica · ${preset.title}"
+                val salt = System.currentTimeMillis() xor System.nanoTime()
+                val ranked = RecommendationEngine.rank(
+                    candidates = verified,
+                    context = RecommendationEngine.SessionContext(
+                        title = title, contextTag = preset.id, sessionSalt = salt,
+                    ),
+                )
+                val queue = AutomaticVarietyPolicy.diversifyRanked(
+                    ranked = ranked,
+                    recentProposalIds = if (PersonalizationSettings.avoidRepeats.value)
+                        AutomaticPlaylistVarietyStore.recentProposals(preset.id) else emptySet(),
+                    salt = salt,
+                )
+                if (queue.isEmpty()) throw IllegalStateException(
+                    "Nessun brano ${preset.title} verificato disponibile"
+                )
+                session = Session(
+                    title = title, contextTag = preset.id, sessionSalt = salt,
+                    endpoint = WatchEndpoint(videoId = queue.last().id),
+                    continuation = null,
+                    seenIds = queue.mapTo(mutableSetOf()) { it.id },
+                    tailSeed = queue.last(), strictGenre = preset.id,
+                )
+                knownSongs = queue
+                AutomaticPlaylistVarietyStore.remember(preset.id, emptyList(), queue)
+                Log.d("LYRA_AUTO_VARIETY", "strictGenre=${preset.id} verifiedItems=${queue.size}")
+                StartResult(title, queue)
+            }
+        }
+
         if (presetId != POP_PRESET_ID) {
             val recentSeeds = if (PersonalizationSettings.avoidRepeats.value) {
                 AutomaticPlaylistVarietyStore.recentSeeds(preset.id)
@@ -340,6 +379,25 @@ object AutomaticPlaylistManager {
         val current = session ?: return@withLock emptyList()
         if (current.consecutiveEarlySkips < 2) return@withLock emptyList()
 
+        if (current.strictGenre != null) {
+            val verified = VerifiedGenrePlaylistClient.fetch(
+                current.strictGenre, current.seenIds + currentSongId, limit = 20,
+            ).filter { RecommendationEngine.artistKey(it.artist) !in current.skippedArtists }
+            if (verified.isEmpty()) return@withLock emptyList()
+            val index = knownSongs.indexOfFirst { it.id == currentSongId }
+            if (index < 0) return@withLock emptyList()
+            val fresh = verified.filter { current.seenIds.add(it.id) }
+            if (fresh.isEmpty()) return@withLock emptyList()
+            current.tailSeed = fresh.last()
+            current.consecutiveEarlySkips = 0
+            current.intentShiftCount += 1
+            knownSongs = (knownSongs.take(index) + fresh).distinctBy { it.id }
+            AutomaticPlaylistVarietyStore.remember(
+                current.strictGenre, emptyList(), fresh, recordOpening = false,
+            )
+            return@withLock fresh
+        }
+
         val currentIndex = knownSongs.indexOfFirst { it.id == currentSongId }
         if (currentIndex < 0) return@withLock emptyList()
         val prefix = knownSongs.take(currentIndex)
@@ -408,6 +466,22 @@ object AutomaticPlaylistManager {
 
     suspend fun loadMore(): List<Song> = mutex.withLock {
         val current = session ?: return@withLock emptyList()
+
+        if (current.strictGenre != null) {
+            // A strict session never falls back to YTM Watch Next.
+            val verified = VerifiedGenrePlaylistClient.fetch(
+                current.strictGenre, current.seenIds, limit = 20,
+            )
+            val fresh = verified.filter { current.seenIds.add(it.id) }
+            if (fresh.isNotEmpty()) {
+                current.tailSeed = fresh.last()
+                knownSongs = knownSongs + fresh
+                AutomaticPlaylistVarietyStore.remember(
+                    current.strictGenre, emptyList(), fresh, recordOpening = false,
+                )
+            }
+            return@withLock fresh
+        }
 
         if (current.balancedPop) {
             val firstBatch = runCatching {
