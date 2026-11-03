@@ -32,7 +32,7 @@ try {
     $gradleText = Get-Content -LiteralPath (Join-Path $root "app\build.gradle.kts") -Raw
     if ($gradleText -notmatch 'versionCode\s*=\s*46\b' -or
         $gradleText -notmatch 'versionName\s*=\s*"1\.0\.8"') {
-        throw "Versione non conforme: attesi versionCode 43 e versionName 1.0.8."
+        throw "Versione non conforme: attesi versionCode 46 e versionName 1.0.8."
     }
 
     $tracked = (& git ls-files -- keystore.properties local.properties release-signing.sha256)
