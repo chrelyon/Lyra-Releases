@@ -1,0 +1,48 @@
+name: Android 1.0.6 verified playlists (unsigned checks)
+on:
+  push:
+    branches:
+      - release/1.0.6-verified-playlists-rc
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+      - name: Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install Android SDK tooling
+        uses: android-actions/setup-android@v3
+      - name: Install Android API 37
+        run: sdkmanager --install "platforms;android-37" "build-tools;37.0.0" "platform-tools"
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+      - name: Unit tests and debug APK
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon :app:testDebugUnitTest :innertube:testDebugUnitTest :app:assembleDebug
+      - name: Ensure version and unsigned APK
+        shell: bash
+        run: |
+          grep -q 'versionCode = 43' app/build.gradle.kts
+          grep -q 'versionName = "1.0.6"' app/build.gradle.kts
+          test -s app/build/outputs/apk/debug/app-debug.apk
+      - name: Archive unsigned debug APK for testing
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lyra-1.0.6-unsigned-debug
+          path: app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 3
