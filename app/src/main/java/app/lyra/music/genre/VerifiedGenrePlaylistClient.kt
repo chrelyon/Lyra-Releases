@@ -1,6 +1,7 @@
 package app.lyra.music.genre
 
 import app.lyra.music.core.model.Song
+import app.lyra.music.diagnostics.LyraLog as Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -65,7 +66,27 @@ object VerifiedGenrePlaylistClient {
                         it.readText().take(90_001)
                     }
                     if (body.length > 90_000) throw IllegalStateException("Risposta server eccessiva")
-                    parseVerifiedTracks(body, preset).ifEmpty {
+                    val parsed = parseVerifiedTracks(body, preset)
+                    val response = JSONObject(body)
+                    val rows = response.optJSONArray("tracks") ?: JSONArray()
+                    val evidence = (0 until minOf(rows.length(), 8)).mapNotNull { index ->
+                        val item = rows.optJSONObject(index) ?: return@mapNotNull null
+                        val id = item.optString("id").takeIf(videoId::matches)
+                            ?: return@mapNotNull null
+                        val source = item.optString("genreSource").take(48)
+                        val reason = item.optString("genreReason").take(64)
+                        "$id:$source:$reason"
+                    }.joinToString(";")
+                    Log.d(
+                        "LYRA_AUTO_PLAYLIST",
+                        "verifiedResponse genre=$preset requested=$limit " +
+                            "serverSelected=${response.optInt("selected_count", rows.length())} " +
+                            "serverVerified=${response.optInt("verified_count", -1)} " +
+                            "parsed=${parsed.size} externalStatus=${response.optString("external_status", "none")} " +
+                            "externalDiscovery=${response.optBoolean("external_discovery", false)} " +
+                            "evidence=$evidence",
+                    )
+                    parsed.ifEmpty {
                         throw IllegalStateException(
                             "Nessun brano $preset verificato: Lyra non inserisce generi casuali"
                         )
