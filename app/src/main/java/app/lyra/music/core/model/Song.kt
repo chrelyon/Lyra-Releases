@@ -20,4 +20,10 @@ data class Song(
 ) {
     val isLocal: Boolean
         get() = !playbackUri.isNullOrBlank()
+
+    /** Prefer original cover; if unavailable, use the exact playable YouTube ID. */
+    val artworkUrlForPlayback: String?
+        get() = thumbnailUrl?.takeIf { it.isNotBlank() }
+            ?: id.takeIf { !isLocal && Regex("[A-Za-z0-9_-]{11}").matches(it) }
+                ?.let { "https://i.ytimg.com/vi/$it/hqdefault.jpg" }
 }
