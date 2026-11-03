@@ -53,8 +53,8 @@ android {
         minSdk = 26
         targetSdk = 36
 
-        versionCode = 45
-        versionName = "1.0.7"
+        versionCode = 46
+        versionName = "1.0.8"
 
         buildConfigField("String", "INNERTUBEX_VERSION", "\"$innerTubeXVersion\"")
     }
