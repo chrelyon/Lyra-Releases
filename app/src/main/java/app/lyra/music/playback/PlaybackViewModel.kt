@@ -296,15 +296,21 @@ class PlaybackViewModel(
                     "started preset=$presetId size=${result.songs.size}",
                 )
             }.onFailure { error ->
-                _automaticPlaylistError.value =
-                    error.message ?: "Impossibile avviare la Playlist Automatica"
+                if (generation == automaticGeneration) {
+                    val detail = error.message ?: "Risposta del server non disponibile"
+                    _automaticPlaylistError.value =
+                        "Playlist non avviata: $detail" +
+                            if (_queueState.value.hasQueue)
+                                " La coda precedente è rimasta selezionata."
+                            else ""
+                }
                 Log.e(
                     "LYRA_AUTO_PLAYLIST",
-                    "startFailed preset=$presetId message=${error.message}",
+                    "startFailed preset=$presetId message=${error.message} previousQueueRetained=${_queueState.value.hasQueue}",
                     error,
                 )
             }
-            _automaticPlaylistLoading.value = false
+            if (generation == automaticGeneration) _automaticPlaylistLoading.value = false
         }
     }
 
@@ -490,9 +496,53 @@ class PlaybackViewModel(
         val targetIndex = when {
             queue.currentIndex < queue.songs.lastIndex -> queue.currentIndex + 1
             queue.repeatMode == PlaybackRepeatMode.ALL && queue.songs.size > 1 -> 0
-            else -> return
+            else -> null
         }
-        playQueueIndex(targetIndex, reason = "NEXT")
+        if (targetIndex != null) {
+            playQueueIndex(targetIndex, reason = "NEXT")
+            return
+        }
+
+        // Manual NEXT on the final track must try the automatic queue provider.
+        if (!AutomaticPlaylistManager.isActive() || _automaticPlaylistLoading.value) return
+        val generation = automaticGeneration
+        val endedId = queue.currentSong?.id ?: return
+        _automaticPlaylistLoading.value = true
+        _automaticPlaylistError.value = null
+        viewModelScope.launch {
+            try {
+                val fetched = AutomaticPlaylistManager.loadMore()
+                if (generation != automaticGeneration) return@launch
+                val liveQueue = _queueState.value
+                if (!liveQueue.hasQueue || liveQueue.isChangingTrack ||
+                    liveQueue.currentSong?.id != endedId ||
+                    !AutomaticPlaylistManager.isActive()) return@launch
+
+                syncAutomaticQueueFromManager()
+                val updated = _queueState.value
+                if (updated.currentSong?.id != endedId) return@launch
+                if (updated.currentIndex < updated.songs.lastIndex) {
+                    playQueueIndex(updated.currentIndex + 1, reason = "NEXT_AUTO_REFILL")
+                } else {
+                    _automaticPlaylistError.value =
+                        "Nessun altro brano verificato disponibile per questa playlist."
+                    Log.w(
+                        "LYRA_AUTO_PLAYLIST",
+                        "manualNextNoTail current=$endedId fetched=${fetched.size}"
+                    )
+                }
+            } catch (error: kotlinx.coroutines.CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                if (generation == automaticGeneration) {
+                    _automaticPlaylistError.value =
+                        "Non riesco a caricare il prossimo brano: ${error.message ?: "server non disponibile"}"
+                    Log.w("LYRA_AUTO_PLAYLIST", "manualNextFailed message=${error.message}")
+                }
+            } finally {
+                if (generation == automaticGeneration) _automaticPlaylistLoading.value = false
+            }
+        }
     }
 
     fun playQueueIndex(index: Int) {
