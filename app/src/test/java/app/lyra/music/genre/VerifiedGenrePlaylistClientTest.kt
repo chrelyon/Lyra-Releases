@@ -7,13 +7,24 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class VerifiedGenrePlaylistClientTest {
-    @Test fun onlyExplicitlySupportedGenresUseStrictServer() {
-        assertTrue(VerifiedGenrePlaylistClient.supported("techno"))
-        assertTrue(VerifiedGenrePlaylistClient.supported("house"))
-        assertTrue(VerifiedGenrePlaylistClient.supported("dance"))
-        assertTrue(VerifiedGenrePlaylistClient.supported("rock"))
+    @Test fun supportsAllApplicationAutomaticPresetsWithDifferentMoodSemantics() {
+        val genres = listOf(
+            "pop", "rock", "rap", "dance", "house", "techno", "edm",
+            "indie", "rnb", "metal", "jazz", "classica",
+        )
+        val moods = listOf("relax", "energia", "party", "focus", "romantica")
+        for (name in genres) {
+            assertTrue("Missing music preset $name", VerifiedGenrePlaylistClient.supported(name))
+            assertFalse("Music genre misclassified as mood: $name",
+                VerifiedGenrePlaylistClient.isMood(name))
+        }
+        for (name in moods) {
+            assertTrue("Missing mood $name", VerifiedGenrePlaylistClient.supported(name))
+            assertTrue("Mood misclassified as music genre: $name",
+                VerifiedGenrePlaylistClient.isMood(name))
+        }
         assertFalse(VerifiedGenrePlaylistClient.supported("electronic"))
-        assertFalse(VerifiedGenrePlaylistClient.supported("pop"))
+        assertFalse(VerifiedGenrePlaylistClient.supported("unknown"))
         assertFalse(VerifiedGenrePlaylistClient.supported(null))
     }
 
