@@ -271,6 +271,26 @@ object AutomaticPlaylistManager {
         val clean = songs.distinctBy { it.id }
         val tail = clean.lastOrNull()
             ?: throw IllegalArgumentException("Cronologia automatica senza brani")
+        // A resumed strict playlist must not switch back to a YTM radio.
+        val strictPreset = AutomaticPlaylistCatalog.presets.firstOrNull { preset ->
+            title == "Playlist Automatica · ${preset.title}" &&
+                VerifiedGenrePlaylistClient.enabled(preset.id)
+        }
+        if (strictPreset != null) {
+            val validated = VerifiedGenrePlaylistClient.fetch(strictPreset.id, limit = 50)
+            val safeIds = validated.mapTo(HashSet()) { it.id }
+            val restored = clean.filter { it.id in safeIds }.ifEmpty { validated }
+            val salt = System.currentTimeMillis() xor System.nanoTime()
+            session = Session(
+                title = title, contextTag = strictPreset.id, sessionSalt = salt,
+                endpoint = WatchEndpoint(videoId = restored.last().id),
+                continuation = null,
+                seenIds = restored.mapTo(mutableSetOf()) { it.id },
+                tailSeed = restored.last(), strictGenre = strictPreset.id,
+            )
+            knownSongs = restored
+            return@withLock StartResult(title, restored)
+        }
         val batch = repository.fromSeed(tail)
         val tag = ListeningProfileStore.inferContextTag(title)
         val salt = System.currentTimeMillis()
