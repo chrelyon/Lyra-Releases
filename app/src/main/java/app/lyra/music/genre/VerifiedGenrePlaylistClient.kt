@@ -22,8 +22,7 @@ object VerifiedGenrePlaylistClient {
 
     fun supported(preset: String?): Boolean = preset != null && preset in strictGenres
     fun enabled(preset: String?): Boolean =
-        supported(preset) && GenreClassifierSettings.enabled.value &&
-            GenreClassifierSettings.isConfigured()
+        supported(preset) && GenreClassifierSettings.isConfigured()
 
     suspend fun fetch(
         preset: String,
@@ -103,7 +102,7 @@ object VerifiedGenrePlaylistClient {
                 runCatching {
                     val parsed = URI(url)
                     parsed.scheme.equals("https",ignoreCase=true) &&
-                        parsed.host?.lowercase() in imageHosts &&
+                        parsed.host?.lowercase()?.let(imageHosts::contains) == true &&
                         parsed.userInfo == null && parsed.fragment == null
                 }.getOrDefault(false)
             }
