@@ -1,4 +1,4 @@
-# Lyra Android 1.0.8 — manuale unico
+# Lyra Android 1.0.8
 
 **Versione dei sorgenti:** `1.0.8` · **build:** `46` · **pacchetto:** `app.lyra.music` · **aggiornato:** 3 novembre 2026
 
