@@ -94,16 +94,18 @@ object VerifiedGenrePlaylistClient {
             val id = item.optString("id")
             val title = item.optString("title").trim()
             val artist = item.optString("artist").trim()
-            if (!videoId.matches(id) || !seen.add(id) ||
+            if (!videoId.matches(id) ||
                 title.isBlank() || artist.isBlank() ||
                 item.optString("genre") != preset
             ) continue
+            if (!seen.add(id)) continue
             val artwork = item.optString("thumbnailUrl").takeIf { url ->
                 runCatching {
                     val parsed = URI(url)
                     parsed.scheme.equals("https",ignoreCase=true) &&
-                        parsed.host?.lowercase()?.let(imageHosts::contains) == true &&
-                        parsed.userInfo == null && parsed.fragment == null
+                        parsed.host?.lowercase()?.let { it in imageHosts } == true &&
+                        parsed.userInfo == null && parsed.fragment == null &&
+                        (parsed.port == -1 || parsed.port == 443)
                 }.getOrDefault(false)
             }
             out.add(Song(
