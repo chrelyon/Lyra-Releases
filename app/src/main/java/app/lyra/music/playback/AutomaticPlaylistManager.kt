@@ -224,60 +224,80 @@ object AutomaticPlaylistManager {
         val preset = AutomaticPlaylistCatalog.preset(presetId)
             ?: throw IllegalArgumentException("Preset automatico sconosciuto: $presetId")
 
-        // The verified recording API is authoritative for strict music genres.
-        // Preserve the existing v3 queue protocol for all other playlist types.
+        // Music genres are verified per recording. Moods are different:
+        // prefer track-level mood evidence, but retain the existing context radio
+        // if no independent evidence is available for that atmosphere.
         if (VerifiedGenrePlaylistClient.supported(presetId)) {
-            // A strict preset must never silently fall back to broad YTM Automix.
+            val isMood = VerifiedGenrePlaylistClient.isMood(presetId)
             if (!VerifiedGenrePlaylistClient.enabled(presetId)) {
-                notice.value = "Classificatore non configurato: verifica connessione e token Lyra."
-                throw IllegalStateException(
-                    "Classificatore Lyra non configurato. Controlla connessione e token nelle Impostazioni."
-                )
-            }
-            val selected = VerifiedGenrePlaylistClient.fetch(presetId, limit = 40)
-            if (generation.get()!=expectedGeneration) throw CancellationException("Playlist cambiata")
-            return mutex.withLock {
-                if (generation.get()!=expectedGeneration) throw CancellationException("Playlist cambiata")
-                val title = "Playlist Automatica · ${preset.title}"
-                val salt = System.currentTimeMillis() xor System.nanoTime()
-                val ranked = RecommendationEngine.rank(
-                    candidates = selected,
-                    context = RecommendationEngine.SessionContext(
-                        title = title, contextTag = preset.id, sessionSalt = salt,
-                    ),
-                )
-                val queue = AutomaticVarietyPolicy.diversifyRanked(
-                    ranked = ranked,
-                    recentProposalIds = if (PersonalizationSettings.avoidRepeats.value)
-                        AutomaticPlaylistVarietyStore.recentProposals(preset.id) else emptySet(),
-                    salt = salt,
-                )
-                Log.d(
-                    "LYRA_AUTO_PLAYLIST",
-                    "verifiedStart genre=$presetId serverItems=${selected.size} " +
-                        "ranked=${ranked.size} playable=${queue.size} " +
-                        "excludedByRanking=${selected.size - ranked.size}",
-                )
-                if (queue.isEmpty()) throw NoVerifiedCandidatesException()
-                notice.value = when (queue.size) {
-                    1 -> "Playlist incompleta: soltanto 1 brano classificato come ${preset.title}."
-                    in 2..4 -> "Catalogo ${preset.title} limitato: solo ${queue.size} brani disponibili."
-                    else -> null
+                if (!isMood) {
+                    notice.value = "Classificatore non configurato: verifica connessione e token Lyra."
+                    throw IllegalStateException(
+                        "Classificatore Lyra non configurato. Controlla connessione e token nelle Impostazioni."
+                    )
                 }
-                remote?.invalidate()
-                remote = null
-                session = Session(
-                    title = title, contextTag = preset.id, sessionSalt = salt,
-                    endpoint = WatchEndpoint(videoId = queue.last().id),
-                    continuation = null,
-                    seenIds = queue.mapTo(mutableSetOf()) { it.id },
-                    tailSeed = queue.last(), strictGenre = preset.id,
-                )
-                knownSongs = queue
-                source.value = "Server · genere verificato"
-                AutomaticPlaylistVarietyStore.remember(preset.id, emptyList(), queue)
-                Log.d("LYRA_AUTO_VARIETY", "strictGenre=${preset.id} verifiedItems=${queue.size}")
-                StartResult(title, queue)
+                notice.value = "Ricerca delle atmosfere non configurata: utilizzo la radio contestuale."
+            } else {
+                val selected = try {
+                    VerifiedGenrePlaylistClient.fetch(presetId, limit = 40)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    if (!isMood) throw error
+                    notice.value = "Nessun brano con atmosfera verificata: uso la radio contestuale."
+                    Log.w(
+                        "LYRA_AUTO_PLAYLIST",
+                        "moodVerifiedUnavailable preset=$presetId message=${error.message}",
+                    )
+                    null
+                }
+                if (selected != null) {
+                    if (generation.get()!=expectedGeneration) throw CancellationException("Playlist cambiata")
+                    return mutex.withLock {
+                        if (generation.get()!=expectedGeneration) throw CancellationException("Playlist cambiata")
+                        val title = "Playlist Automatica · ${preset.title}"
+                        val salt = System.currentTimeMillis() xor System.nanoTime()
+                        val ranked = RecommendationEngine.rank(
+                            candidates = selected,
+                            context = RecommendationEngine.SessionContext(
+                                title = title, contextTag = preset.id, sessionSalt = salt,
+                            ),
+                        )
+                        val queue = AutomaticVarietyPolicy.diversifyRanked(
+                            ranked = ranked,
+                            recentProposalIds = if (PersonalizationSettings.avoidRepeats.value)
+                                AutomaticPlaylistVarietyStore.recentProposals(preset.id) else emptySet(),
+                            salt = salt,
+                        )
+                        Log.d(
+                            "LYRA_AUTO_PLAYLIST",
+                            "verifiedStart preset=$presetId mood=$isMood serverItems=${selected.size} " +
+                                "ranked=${ranked.size} playable=${queue.size} " +
+                                "excludedByRanking=${selected.size - ranked.size}",
+                        )
+                        if (queue.isEmpty()) throw NoVerifiedCandidatesException()
+                        notice.value = when (queue.size) {
+                            1 -> "Playlist incompleta: soltanto 1 brano verificato per ${preset.title}."
+                            in 2..4 -> "Catalogo ${preset.title} limitato: solo ${queue.size} brani verificati."
+                            else -> null
+                        }
+                        remote?.invalidate()
+                        remote = null
+                        session = Session(
+                            title = title, contextTag = preset.id, sessionSalt = salt,
+                            endpoint = WatchEndpoint(videoId = queue.last().id),
+                            continuation = null,
+                            seenIds = queue.mapTo(mutableSetOf()) { it.id },
+                            tailSeed = queue.last(), strictGenre = preset.id,
+                        )
+                        knownSongs = queue
+                        source.value = if (isMood) "Server · atmosfera verificata"
+                            else "Server · genere verificato"
+                        AutomaticPlaylistVarietyStore.remember(preset.id, emptyList(), queue)
+                        Log.d("LYRA_AUTO_VARIETY", "strictPreset=${preset.id} verifiedItems=${queue.size}")
+                        StartResult(title, queue)
+                    }
+                }
             }
         }
 
