@@ -215,6 +215,27 @@ Non versionare `keystore.properties`, `*.jks`, `*.keystore`, `release-signing.sh
 
 Per diagnosi: verificare versione Android e server reali, ottenere log senza token, provare un brano noto, controllare la relativa classificazione nel DB, ripetere CI e test sul dispositivo dopo ogni correzione.
 
+### Diagnosi: Techno automatica, playlist salvate e NEXT
+
+Un messaggio **«Aggiornamento non riuscito: uso le playlist salvate»** (nelle APK precedenti alla correzione) proviene dal **refresh della libreria YouTube Music** in `HomeViewModel`; non identifica un errore della verifica Techno. Il messaggio è ora più esplicito.
+
+Quando l'avvio di una playlist rigorosa non riesce, la vecchia queue può continuare a suonare: **non attribuire le tracce in riproduzione alla nuova playlist finché non compare il nuovo titolo e il messaggio «Server · genere verificato»**. Le nuove correzioni indicano quando una richiesta non è partita e perché.
+
+I preset Techno, House, Dance e Rock **non passano più a una radio generica** quando manca token/connessione. Quando si preme NEXT sull'ultimo brano di una playlist automatica attiva, Lyra prova a chiedere nuovi brani al provider; l'assenza di candidati rimane un messaggio di errore e non crea musica di genere sconosciuto. Le playlist manuali di un singolo brano non possono magicamente avere un successivo.
+
+Per capire l'errore reale, con telefono connesso in ADB, **prima di cancellare i log**, da PowerShell:
+
+```powershell
+adb devices
+adb logcat -d -v time LYRA_AUTO_PLAYLIST:D LYRA_LIBRARY:D LYRA_QUEUE:D LYRA_AUTO:D AndroidRuntime:E '*:S' |
+  Select-Object -Last 100
+```
+
+Se il problema non si riproduce, avviare `.\tools\lyra-auto-logcat.ps1` e poi ripetere il test. Gli script di logging non cancellano più gli eventi preesistenti, salvo `-Clear` esplicito. Nei log ricercare `startFailed preset=techno`, `started preset=techno`, `manualNextNoTail`, `LYRA_LIBRARY librarySyncFailed`. Oscurare token, hostname privati e dati personali prima di condividere.
+
+Un errore HTTP **404** sulla nuova API significa che il backend raggiunto **non implementa** `POST /v1/playlists/verified-genre`; HTTP **401/403** indica autorizzazione Bearer mancante/negata; assenza di candidate verificati indica catalogo insufficiente. Non si può sapere quale sia senza log e verifica della versione **realmente in esecuzione** su Ubuntu.
+
+
 ## Step 14 — Changelog e storia conservata
 
 | Versione | Modifiche principali |
