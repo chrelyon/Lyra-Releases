@@ -311,7 +311,11 @@ class PlaybackViewModel(
                 }
                 Log.e(
                     "LYRA_AUTO_PLAYLIST",
-                    "startFailed preset=$presetId message=${error.message} previousQueueRetained=${_queueState.value.hasQueue}",
+                    "startFailed preset=$presetId message=${error.message} " +
+                        "previousQueueRetained=${_queueState.value.hasQueue} " +
+                        "queueIndex=${_queueState.value.currentIndex} " +
+                        "queueSize=${_queueState.value.songs.size} " +
+                        "changing=${_queueState.value.isChangingTrack}",
                     error,
                 )
             }
@@ -496,7 +500,14 @@ class PlaybackViewModel(
 
     fun next() {
         val queue = _queueState.value
-        if (!queue.hasQueue || queue.isChangingTrack) return
+        if (!queue.hasQueue || queue.isChangingTrack) {
+            Log.d(
+                "LYRA_QUEUE",
+                "nextRejected hasQueue=${queue.hasQueue} changing=${queue.isChangingTrack} " +
+                    "index=${queue.currentIndex} size=${queue.songs.size}"
+            )
+            return
+        }
 
         val targetIndex = when {
             queue.currentIndex < queue.songs.lastIndex -> queue.currentIndex + 1
@@ -509,7 +520,15 @@ class PlaybackViewModel(
         }
 
         // Manual NEXT on the final track must try the automatic queue provider.
-        if (!AutomaticPlaylistManager.isActive() || _automaticPlaylistLoading.value) return
+        if (!AutomaticPlaylistManager.isActive() || _automaticPlaylistLoading.value) {
+            Log.d(
+                "LYRA_QUEUE",
+                "nextRejected reason=noTailOrLoading index=${queue.currentIndex} " +
+                    "size=${queue.songs.size} automatic=${AutomaticPlaylistManager.isActive()} " +
+                    "loading=${_automaticPlaylistLoading.value}"
+            )
+            return
+        }
         val generation = automaticGeneration
         val endedId = queue.currentSong?.id ?: return
         _automaticPlaylistLoading.value = true
