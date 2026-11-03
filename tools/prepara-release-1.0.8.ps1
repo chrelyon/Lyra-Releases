@@ -25,8 +25,8 @@ try {
     }
     $currentBranch = (& git branch --show-current).Trim()
     Check-LastExit "Lettura ramo Git"
-    if ($currentBranch -ne $requiredBranch) {
-        throw "Ramo errato: '$currentBranch'. Usa '$requiredBranch' prima della build."
+    if ($currentBranch -notin @($requiredBranch, "main")) {
+        throw "Ramo errato: '$currentBranch'. Usa '$requiredBranch' oppure 'main' prima della build."
     }
 
     $gradleText = Get-Content -LiteralPath (Join-Path $root "app\build.gradle.kts") -Raw

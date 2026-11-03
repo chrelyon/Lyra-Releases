@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - release/1.0.8-verified-playlists-rc
+      - main
   pull_request:
     branches:
       - main
@@ -14,7 +15,7 @@ permissions:
 # A push and its pull request often trigger identical builds. Only the latest
 # release-candidate check needs to consume an Android SDK runner.
 concurrency:
-  group: lyra-android-verified-1.0.8-rc
+  group: lyra-android-verified-1.0.8-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

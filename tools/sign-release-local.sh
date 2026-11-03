@@ -41,7 +41,7 @@ cat > "$DIST/update.json" <<JSON
   "apkName": "$APK_NAME",
   "sha256": "$SHA256",
   "mandatory": false,
-  "notes": "Lyra $VERSION_NAME: cerca avanzato artisti e album; catalogo server unificato."
+  "notes": "Lyra $VERSION_NAME: playlist a genere verificato, copertine e catalogo server v3."
 }
 JSON
 echo "APK firmato verificato e update.json: $DIST"

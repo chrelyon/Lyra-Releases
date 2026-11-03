@@ -1,34 +1,56 @@
 {
-  "provenienza": "Lyra-Android-1.0.5-build42-SORGENTI-COMPLETI-PULITI.zip",
-  "archive_sha256": "2ad871aa2b26f28324f375c70c78b225cad22227992f13927f9a0786fd823364",
-  "tipo": "Android application source",
-  "versionName": "1.0.7",
-  "versionCode": 45,
-  "source_files_in_archive": 275,
-  "import_changes": [
-    "README aggiornato; originale conservato in docs/provenienza",
-    "MANIFEST aggiornato; originale conservato in docs/provenienza",
-    "gitignore esteso per credenziali, runtime e output",
-    "gradlew e script shell con terminatori LF ed eseguibili",
-    "gitattributes per terminatori script portabili"
+  "project": "Lyra Android",
+  "repository": "chrelyon/Lyra-Releases",
+  "kind": "Android application sources",
+  "versionName": "1.0.8",
+  "versionCode": 46,
+  "applicationId": "app.lyra.music",
+  "updated_at": "2026-11-03",
+  "documentation": "README.md",
+  "main_branch": "main",
+  "source_base": {
+    "branch": "feature/server-playlists",
+    "commit": "46310e3758cc9f8d96a95150747ccf64ce082bf2",
+    "versionName": "1.0.7",
+    "versionCode": 45
+  },
+  "server": {
+    "repository": "chrelyon/Lyra",
+    "required_version_for_verified_genre": "0.3.21",
+    "api": "POST /v1/playlists/verified-genre",
+    "live_deployment_verified": false
+  },
+  "features": [
+    "server v3 playlist protocol retained",
+    "strict verified per-track Techno/House/Dance/Rock",
+    "cover thumbnail fallback",
+    "Android Auto metadata and local original-key signing"
   ],
-  "signing_keys_included": false,
-  "official_release_assets_modified": false,
-  "status": "unsigned-apk-built-awaiting-local-signature",
-  "source_archive_version": "1.0.5 build 42",
-  "development_changes": [
-    "server playlist v3 integration",
-    "exact artist credits and genre constraints",
-    "boundary-only future queue replacement",
-    "incremental metadata and deduplicated feedback",
-    "advanced artist and album search",
-    "explicit unsigned build for local release signing"
-  ],
-  "apk_artifact": {
-    "url": "https://github.com/chrelyon/Lyra-Releases/actions/runs/41327400653/artifacts/13091464676",
-    "run_id": 41327400653,
-    "source_commit": "195e249ecc14e0252b37a530982fb35c50407f98",
-    "zip_sha256": "d30a8cdddb78e9206b104be9e71d796d290b926ee4e52368f4ee72bde54ef782",
-    "signed": false
+  "tests": {
+    "github_actions_run": 41634746647,
+    "result": "success",
+    "windows_debug_build_reported_success": true,
+    "physical_device_test_verified": false
+  },
+  "published_release": {
+    "tag": "v1.0.8",
+    "published_at": "2026-11-03T12:50:57Z",
+    "assets": [
+      "Lyra-1.0.8.apk",
+      "update.json"
+    ],
+    "apk_signature_independently_verified": false,
+    "tag_source_note": "At audit the tag v1.0.8 pointed to legacy Android 1.0.5 commit 331e7b60f8e1fa11fecc92ec92ed1476d8bec3d9. Published tag not rewritten."
+  },
+  "legacy_source_import": {
+    "archive": "Lyra-Android-1.0.5-build42-SORGENTI-COMPLETI-PULITI.zip",
+    "sha256": "2ad871aa2b26f28324f375c70c78b225cad22227992f13927f9a0786fd823364",
+    "note": "Historical import only: NOT checksum for current v1.0.8 source."
+  },
+  "security": {
+    "signing_key_in_repo": false,
+    "keystore_properties_in_repo": false,
+    "local_fingerprint_in_repo": false,
+    "android_apk_in_git": false
   }
 }

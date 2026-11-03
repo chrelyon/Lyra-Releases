@@ -24,11 +24,9 @@ try {
     $rootFiles = @(
         "settings.gradle.kts", "build.gradle.kts", "gradle.properties",
         "gradlew", "gradlew.bat", "app/build.gradle.kts",
-        "innertube/build.gradle.kts", "release-signing.sha256",
+        "innertube/build.gradle.kts",
         ".gitignore", ".gitattributes",
-        "README.md", "CHANGELOG.md", "RELEASE_NOTES_Lyra-1.0.0.md",
-        "RELEASE_NOTES_Lyra-1.0.2-PREPARAZIONE.md",
-        "GUIDA_RILASCIO_1.0.0.md"
+        "README.md", "MANIFEST.json"
     )
     $items = New-Object 'System.Collections.Generic.List[System.IO.FileInfo]'
     foreach ($relative in $folders) {
