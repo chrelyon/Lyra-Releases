@@ -222,7 +222,16 @@ object AutomaticPlaylistManager {
 
         // The verified recording API is authoritative for strict music genres.
         // Preserve the existing v3 queue protocol for all other playlist types.
-        if (VerifiedGenrePlaylistClient.enabled(presetId)) {
+        // A genre-labelled playlist must never silently degrade to generic
+        // YouTube Automix just because no verified-classifier token exists.
+        if (VerifiedGenrePlaylistClient.supported(presetId)) {
+            if (!VerifiedGenrePlaylistClient.enabled(presetId)) {
+                source.value = "Genere non verificabile · controlla server e token"
+                throw IllegalStateException(
+                    "Playlist ${preset.title} non avviata: abilita la connessione al server " +
+                        "e configura il token Lyra. Nessun brano non verificato verrà inserito."
+                )
+            }
             val selected = VerifiedGenrePlaylistClient.fetch(presetId, limit = 40)
             if (generation.get()!=expectedGeneration) throw CancellationException("Playlist cambiata")
             return mutex.withLock {
