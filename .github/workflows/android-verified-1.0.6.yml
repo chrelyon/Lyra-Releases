@@ -11,6 +11,12 @@ on:
 permissions:
   contents: read
 
+# A push and its pull request often trigger identical builds. Only the latest
+# release-candidate check needs to consume an Android SDK runner.
+concurrency:
+  group: lyra-android-verified-1.0.6-rc
+  cancel-in-progress: true
+
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
