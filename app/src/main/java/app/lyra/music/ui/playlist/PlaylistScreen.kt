@@ -151,7 +151,7 @@ fun PlaylistScreen(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         SongArtwork(
-                            artworkUrl = song.thumbnailUrl,
+                            artworkUrl = song.artworkUrlForPlayback,
                             contentDescription = song.title,
                             modifier = Modifier.size(58.dp),
                         )
