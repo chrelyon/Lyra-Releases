@@ -80,6 +80,20 @@ object VerifiedGenrePlaylistClient {
         }
     }
 
+    /** Only explicitly trusted public image URLs enter player metadata. */
+    internal fun approvedArtworkUrl(raw: String?): String? {
+        if (raw.isNullOrBlank()) return null
+        return raw.takeIf { url ->
+            runCatching {
+                val parsed = URI(url)
+                parsed.scheme.equals("https", ignoreCase = true) &&
+                    parsed.host?.lowercase()?.let { it in imageHosts } == true &&
+                    parsed.userInfo == null && parsed.fragment == null &&
+                    (parsed.port == -1 || parsed.port == 443)
+            }.getOrDefault(false)
+        }
+    }
+
     /** Pure validator, suitable for deterministic tests without live server. */
     fun parseVerifiedTracks(json: String, preset: String): List<Song> {
         val body = JSONObject(json)
@@ -99,15 +113,7 @@ object VerifiedGenrePlaylistClient {
                 item.optString("genre") != preset
             ) continue
             if (!seen.add(id)) continue
-            val artwork = item.optString("thumbnailUrl").takeIf { url ->
-                runCatching {
-                    val parsed = URI(url)
-                    parsed.scheme.equals("https",ignoreCase=true) &&
-                        parsed.host?.lowercase()?.let { it in imageHosts } == true &&
-                        parsed.userInfo == null && parsed.fragment == null &&
-                        (parsed.port == -1 || parsed.port == 443)
-                }.getOrDefault(false)
-            }
+            val artwork = approvedArtworkUrl(item.optString("thumbnailUrl"))
             out.add(Song(
                 id = id,
                 title = title,
