@@ -1823,7 +1823,7 @@ class PlaybackService : MediaLibraryService() {
                     .setTitle(entry.song.title)
                     .setArtist(entry.song.artist)
                     .setSubtitle("${entry.queueTitle} · ${entry.queueSongs.size} brani")
-                    .setArtworkUri(autoArtworkUri(entry.song.thumbnailUrl, R.drawable.auto_art_songs))
+                    .setArtworkUri(autoArtworkUri(entry.song.artworkUrlForPlayback, R.drawable.auto_art_songs))
                     .setIsBrowsable(false)
                     .setIsPlayable(true)
                     .build()
@@ -2198,7 +2198,7 @@ class PlaybackService : MediaLibraryService() {
     ): MediaItem {
         return PlaybackMediaItemFactory.deferred(
             song = song,
-            artworkUri = autoArtworkUri(song.thumbnailUrl, R.drawable.auto_art_lyra),
+            artworkUri = autoArtworkUri(song.artworkUrlForPlayback, R.drawable.auto_art_lyra),
             contextLabel = contextLabel,
         )
     }
@@ -2312,7 +2312,7 @@ class PlaybackService : MediaLibraryService() {
                     .setIsBrowsable(false)
                     .setIsPlayable(true)
                     .setExtras(extras)
-                    .setArtworkUri(autoArtworkUri(song.thumbnailUrl, R.drawable.auto_art_lyra))
+                    .setArtworkUri(autoArtworkUri(song.artworkUrlForPlayback, R.drawable.auto_art_lyra))
                     .build()
             )
             .build()
@@ -3073,7 +3073,7 @@ class PlaybackService : MediaLibraryService() {
                 if (song.isLocal) {
                     PlaybackMediaItemFactory.local(
                         song = song,
-                        artworkUri = autoArtworkUri(song.thumbnailUrl, R.drawable.auto_art_lyra),
+                        artworkUri = autoArtworkUri(song.artworkUrlForPlayback, R.drawable.auto_art_lyra),
                         contextLabel = restored.queueState.title,
                     )
                 } else {
@@ -3084,7 +3084,7 @@ class PlaybackService : MediaLibraryService() {
                     PlaybackMediaItemFactory.playable(
                         source = source,
                         song = song,
-                        artworkUri = autoArtworkUri(song.thumbnailUrl, R.drawable.auto_art_lyra),
+                        artworkUri = autoArtworkUri(song.artworkUrlForPlayback, R.drawable.auto_art_lyra),
                         contextLabel = restored.queueState.title,
                     )
                 }
