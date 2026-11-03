@@ -63,6 +63,9 @@ fun NowPlayingScreen(
     onCycleRepeat: () -> Unit,
     onSeekTo: (Long) -> Unit,
     onStop: () -> Unit,
+    canExtendAutomaticQueue: Boolean = false,
+    automaticPlaylistLoading: Boolean = false,
+    automaticStatusMessage: String? = null,
     modifier: Modifier = Modifier,
 ) {
     LaunchedEffect(state.hasMediaItem) {
@@ -213,6 +216,16 @@ fun NowPlayingScreen(
             )
         }
 
+        automaticStatusMessage?.let { message ->
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+                maxLines = 3,
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+            )
+        }
+
         Spacer(Modifier.weight(1f))
 
         if (queueState.hasQueue) {
@@ -312,7 +325,8 @@ fun NowPlayingScreen(
 
             IconButton(
                 onClick = onNext,
-                enabled = queueState.hasNext && !queueState.isChangingTrack,
+                enabled = (queueState.hasNext || canExtendAutomaticQueue) &&
+                    !queueState.isChangingTrack && !automaticPlaylistLoading,
                 modifier = Modifier.size(56.dp),
             ) {
                 Icon(
