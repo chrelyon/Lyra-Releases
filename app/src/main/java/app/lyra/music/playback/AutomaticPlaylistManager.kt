@@ -226,7 +226,8 @@ object AutomaticPlaylistManager {
         // YouTube Automix just because no verified-classifier token exists.
         if (VerifiedGenrePlaylistClient.supported(presetId)) {
             if (!VerifiedGenrePlaylistClient.enabled(presetId)) {
-                source.value = "Genere non verificabile · controlla server e token"
+                // Do not overwrite the source label of the old, still active
+                // automatic queue when this new strict request cannot start.
                 throw IllegalStateException(
                     "Playlist ${preset.title} non avviata: abilita la connessione al server " +
                         "e configura il token Lyra. Nessun brano non verificato verrà inserito."
