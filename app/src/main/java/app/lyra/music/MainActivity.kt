@@ -275,6 +275,9 @@ class MainActivity : ComponentActivity() {
                                     onPause = playbackViewModel::pause,
                                     onResume = playbackViewModel::resume,
                                     onNext = playbackViewModel::next,
+                                    canExtendAutomaticQueue = app.lyra.music.playback.AutomaticPlaylistManager.isActive(),
+                                    automaticPlaylistLoading = automaticPlaylistLoading,
+                                    automaticStatusMessage = automaticPlaylistError,
                                     onToggleShuffle = playbackViewModel::toggleShuffle,
                                     onCycleRepeat = playbackViewModel::cycleRepeatMode,
                                     onOpenQueue = {
