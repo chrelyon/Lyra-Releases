@@ -17,11 +17,18 @@ import java.net.URL
  * request into a broad electronic playlist on network/provider errors.
  */
 object VerifiedGenrePlaylistClient {
-    private val strictGenres = setOf("techno", "house", "dance", "rock")
+    private val genrePresets = setOf(
+        "pop", "rock", "rap", "dance", "house", "techno", "edm",
+        "indie", "rnb", "metal", "jazz", "classica",
+    )
+    private val moodPresets = setOf("relax", "energia", "party", "focus", "romantica")
     private val videoId = Regex("^[A-Za-z0-9_-]{11}$")
     private val imageHosts = setOf("i.ytimg.com", "lh3.googleusercontent.com")
 
-    fun supported(preset: String?): Boolean = preset != null && preset in strictGenres
+    fun supported(preset: String?): Boolean =
+        preset != null && (preset in genrePresets || preset in moodPresets)
+
+    fun isMood(preset: String?): Boolean = preset != null && preset in moodPresets
     fun enabled(preset: String?): Boolean =
         supported(preset) && GenreClassifierSettings.isConfigured()
 
@@ -30,7 +37,7 @@ object VerifiedGenrePlaylistClient {
         excludeIds: Collection<String> = emptyList(),
         limit: Int = 40,
     ): List<Song> = withContext(Dispatchers.IO) {
-        require(supported(preset)) { "Genere non supportato per la playlist verificata" }
+        require(supported(preset)) { "Preset non supportato per la playlist verificata" }
         require(limit in 1..50) { "Limite brani non valido" }
         val token = GenreClassifierSettings.token()
             ?: throw IllegalStateException("Token Lyra non configurato")
