@@ -52,6 +52,7 @@ class PlaybackViewModel(
 
     private var loadGeneration = 0L
     private var automaticGeneration = 0L
+    private var automaticNextInFlight = false
     private var lastKnownPositionMs = 0L
     private var lastPersistedPositionMs = 0L
     private var lastExternalSyncLogKey: String? = null
@@ -490,9 +491,64 @@ class PlaybackViewModel(
         val targetIndex = when {
             queue.currentIndex < queue.songs.lastIndex -> queue.currentIndex + 1
             queue.repeatMode == PlaybackRepeatMode.ALL && queue.songs.size > 1 -> 0
-            else -> return
+            else -> null
         }
-        playQueueIndex(targetIndex, reason = "NEXT")
+        if (targetIndex != null) {
+            playQueueIndex(targetIndex, reason = "NEXT")
+            return
+        }
+        // An automatic radio can request another verified batch even with one item.
+        if (!AutomaticPlaylistManager.isActive() ||
+            AutomaticPlaylistManager.currentTitle() != queue.title ||
+            automaticNextInFlight
+        ) return
+
+        val generation = automaticGeneration
+        val currentId = queue.currentSong?.id ?: return
+        automaticNextInFlight = true
+        AutomaticPlaylistManager.notice.value = "Cerco altri brani del genere richiesto..."
+        viewModelScope.launch {
+            try {
+                // The service may have prefetched while the UI queue was stale.
+                syncAutomaticQueueFromManager()
+                var updated = _queueState.value
+                if (updated.currentIndex >= updated.songs.lastIndex &&
+                    generation == automaticGeneration &&
+                    updated.currentSong?.id == currentId
+                ) {
+                    val added = AutomaticPlaylistManager.loadMore()
+                    Log.d(
+                        "LYRA_AUTO_PLAYLIST",
+                        "manualNextRefill added=${added.size} title=${queue.title}",
+                    )
+                    syncAutomaticQueueFromManager()
+                    updated = _queueState.value
+                }
+                if (generation != automaticGeneration || updated.currentSong?.id != currentId) {
+                    return@launch
+                }
+                if (updated.currentIndex < updated.songs.lastIndex) {
+                    AutomaticPlaylistManager.notice.value = null
+                    playQueueIndex(updated.currentIndex + 1, reason = "NEXT_AUTO_REFILL")
+                } else {
+                    val detail = AutomaticPlaylistManager.notice.value
+                    if (detail == null || detail.startsWith("Cerco ")) {
+                        AutomaticPlaylistManager.notice.value =
+                            "Nessun altro brano verificato disponibile: riprova più tardi."
+                    }
+                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                Log.w("LYRA_AUTO_PLAYLIST", "manualNextFailed message=${error.message}", error)
+                if (generation == automaticGeneration) {
+                    AutomaticPlaylistManager.notice.value =
+                        "Impossibile cercare altri brani. Controlla il server Lyra e riprova."
+                }
+            } finally {
+                automaticNextInFlight = false
+            }
+        }
     }
 
     fun playQueueIndex(index: Int) {
