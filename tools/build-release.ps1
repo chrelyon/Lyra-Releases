@@ -57,7 +57,15 @@ try {
         mandatory = $false
         notes = "Aggiornamento Lyra $versionName"
     }
-    $metadata | ConvertTo-Json | Set-Content -Encoding UTF8 (Join-Path $dist "update.json")
+    # Windows PowerShell 5.1 writes a UTF-8 BOM by default; JSON consumers
+    # may reject it. Always emit strict UTF-8 without BOM.
+    $updatePath = Join-Path $dist "update.json"
+    $json = $metadata | ConvertTo-Json
+    [System.IO.File]::WriteAllText(
+        $updatePath,
+        $json + [Environment]::NewLine,
+        [System.Text.UTF8Encoding]::new($false)
+    )
 
     Write-Host ""
     Write-Host "Release pronta:" -ForegroundColor Green
