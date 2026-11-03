@@ -151,7 +151,7 @@ class HomeViewModel : ViewModel() {
                     _errorMessage.value = null
                 } else if (hasVisibleCache) {
                     _syncWarning.value =
-                        "Aggiornamento non riuscito: uso le playlist salvate."
+                        "Sincronizzazione della libreria YouTube Music non riuscita: mostro le playlist già salvate. Le playlist automatiche Lyra sono indipendenti da questo avviso."
                 } else {
                     _errorMessage.value =
                         error.message ?: "Errore sincronizzazione playlist YouTube"
