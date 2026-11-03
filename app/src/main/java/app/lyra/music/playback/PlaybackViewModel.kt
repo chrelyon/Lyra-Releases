@@ -273,7 +273,12 @@ class PlaybackViewModel(
     fun startAutomaticPlaylist(presetId: String) {
         if (_automaticPlaylistLoading.value) return
         val generation = ++automaticGeneration
-        AutomaticPlaylistManager.clear()
+        // The strict provider keeps the previous automatic session untouched
+        // while checking the new one. If the server rejects the request,
+        // the old queue remains navigable instead of becoming orphaned.
+        if (!app.lyra.music.genre.VerifiedGenrePlaylistClient.supported(presetId)) {
+            AutomaticPlaylistManager.clear()
+        }
         _automaticPlaylistLoading.value = true
         _automaticPlaylistError.value = null
 
