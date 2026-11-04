@@ -61,6 +61,7 @@ object YouTubeAuthorizationManager {
     private var authorizedAccount: Account? = null
     private var silentRefreshInFlight = false
     private var pendingAccountSelection = false
+    private var authorizationSerial: Long = 0L
     private val profileScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val _state = MutableStateFlow(YouTubeAuthorizationState())
@@ -79,11 +80,12 @@ object YouTubeAuthorizationManager {
      */
     fun refreshSilently() {
         val context = appContext ?: return
-        if (silentRefreshInFlight) {
-            Log.d(TAG, "silentCheck skipped reason=inFlight")
+        if (silentRefreshInFlight || _state.value.isAuthorizing) {
+            Log.d(TAG, "silentCheck skipped reason=busy")
             return
         }
         silentRefreshInFlight = true
+        val serial = ++authorizationSerial
 
         _state.value = _state.value.copy(
             isChecking = true,
@@ -94,6 +96,7 @@ object YouTubeAuthorizationManager {
         Identity.getAuthorizationClient(context)
             .authorize(buildAuthorizationRequest(forceAccountSelection = false))
             .addOnSuccessListener { result ->
+                if (serial != authorizationSerial) return@addOnSuccessListener
                 silentRefreshInFlight = false
                 if (result.hasResolution()) {
                     accessToken = null
@@ -110,6 +113,7 @@ object YouTubeAuthorizationManager {
                 }
             }
             .addOnFailureListener { error ->
+                if (serial != authorizationSerial) return@addOnFailureListener
                 silentRefreshInFlight = false
                 accessToken = null
                 authorizedAccount = null
@@ -131,6 +135,8 @@ object YouTubeAuthorizationManager {
         onResolutionRequired: (PendingIntent) -> Unit,
     ) {
         initialize(activity.applicationContext)
+        val serial = ++authorizationSerial
+        silentRefreshInFlight = false
         pendingAccountSelection = forceAccountSelection
 
         _state.value = _state.value.copy(
@@ -142,6 +148,7 @@ object YouTubeAuthorizationManager {
         Identity.getAuthorizationClient(activity)
             .authorize(buildAuthorizationRequest(forceAccountSelection))
             .addOnSuccessListener { result ->
+                if (serial != authorizationSerial) return@addOnSuccessListener
                 if (result.hasResolution()) {
                     val pendingIntent = result.pendingIntent
                     if (pendingIntent == null) {
@@ -173,6 +180,8 @@ object YouTubeAuthorizationManager {
                 }
             }
             .addOnFailureListener { error ->
+                if (serial != authorizationSerial) return@addOnFailureListener
+                pendingAccountSelection = false
                 accessToken = null
                 authorizedAccount = null
                 _state.value = YouTubeAuthorizationState(
@@ -191,6 +200,7 @@ object YouTubeAuthorizationManager {
         data: Intent?,
     ) {
         if (resultCode != Activity.RESULT_OK || data == null) {
+            pendingAccountSelection = false
             _state.value = _state.value.copy(
                 isChecking = false,
                 isAuthorizing = false,
@@ -243,6 +253,8 @@ object YouTubeAuthorizationManager {
 
     /** Revoca l'accesso Google concesso a Lyra e cancella lo stato locale. */
     fun disconnect(onComplete: (Boolean) -> Unit = {}) {
+        val serial = ++authorizationSerial
+        pendingAccountSelection = false
         val context = appContext
         if (context == null) {
             clearLocalAuthorizationState(
@@ -265,6 +277,7 @@ object YouTubeAuthorizationManager {
         Identity.getAuthorizationClient(context)
             .revokeAccess(builder.build())
             .addOnCompleteListener { task ->
+                if (serial != authorizationSerial) return@addOnCompleteListener
                 clearLocalAuthorizationState(
                     errorMessage = if (task.isSuccessful) {
                         null
