@@ -2,45 +2,44 @@
   "project": "Lyra Android",
   "repository": "chrelyon/Lyra-Releases",
   "kind": "Android application sources",
-  "versionName": "1.0.8",
-  "versionCode": 46,
+  "versionName": "1.0.9",
+  "versionCode": 47,
   "applicationId": "app.lyra.music",
-  "updated_at": "2026-11-03",
+  "updated_at": "2026-11-04",
   "documentation": "README.md",
   "main_branch": "main",
   "source_base": {
-    "branch": "feature/server-playlists",
-    "commit": "46310e3758cc9f8d96a95150747ccf64ce082bf2",
-    "versionName": "1.0.7",
-    "versionCode": 45
+    "branch": "main",
+    "versionName": "1.0.8",
+    "versionCode": 46,
+    "note": "Includes unmerged 1.0.8 verified playlist corrections from Android PR #6 and 17-preset PR #7"
   },
   "server": {
     "repository": "chrelyon/Lyra",
-    "required_version_for_verified_genre": "0.3.21",
+    "required_version_for_verified_genre": "0.3.25",
     "api": "POST /v1/playlists/verified-genre",
-    "live_deployment_verified": false
+    "live_deployment_verified": false,
+    "required_version_for_playback_monitor": "0.3.25",
+    "playback_monitor_api": "POST /v3/playlists/playback-status"
   },
   "features": [
-    "server v3 playlist protocol retained",
-    "strict verified per-track Techno/House/Dance/Rock",
-    "cover thumbnail fallback",
-    "Android Auto metadata and local original-key signing"
+    "17 automatic playlist presets with recording-evidence discipline",
+    "Next refill and in-player automatic playlist warnings",
+    "on-device server/local algorithm toggle independent from learning preferences",
+    "Media3 playback monitor heartbeat (screen-off and Android Auto)",
+    "existing private release signing with per-release fingerprint check",
+    "Windows local source sync and signed GitHub Release publishing script"
   ],
   "tests": {
-    "github_actions_run": 41634746647,
-    "result": "success",
-    "windows_debug_build_reported_success": true,
-    "physical_device_test_verified": false
+    "github_actions_run": null,
+    "result": "CI pending",
+    "windows_release_build_verified": false,
+    "physical_device_test_verified": false,
+    "android_auto_verified": false
   },
   "published_release": {
     "tag": "v1.0.8",
-    "published_at": "2026-11-03T12:50:57Z",
-    "assets": [
-      "Lyra-1.0.8.apk",
-      "update.json"
-    ],
-    "apk_signature_independently_verified": false,
-    "tag_source_note": "At audit the tag v1.0.8 pointed to legacy Android 1.0.5 commit 331e7b60f8e1fa11fecc92ec92ed1476d8bec3d9. Published tag not rewritten."
+    "note": "Most recent previously published signed APK, v1.0.9 not yet published or signed on Windows"
   },
   "legacy_source_import": {
     "archive": "Lyra-Android-1.0.5-build42-SORGENTI-COMPLETI-PULITI.zip",
