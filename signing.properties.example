@@ -1,0 +1,7 @@
+# ESEMPIO. Non inserire qui password reali, non versionare il file compilato.
+# Conserva il file di configurazione privata e il keystore fuori dal repo.
+# Usa / anche su Windows, es.: D:/AndroidSigning/release-key.jks
+storeFile=D:/AndroidSigning/release-key.jks
+storePassword=INSERISCI_PASSWORD_LOCALMENTE
+keyAlias=ALIAS_PRIVATO
+keyPassword=INSERISCI_PASSWORD_LOCALMENTE
