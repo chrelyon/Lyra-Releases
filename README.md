@@ -1,4 +1,47 @@
-# Lyra Android 1.0.8
+# Lyra Android 1.0.9 — preparazione release
+
+**Versione sorgenti:** `1.0.9` · **build:** `47` · **pacchetto:** `app.lyra.music`.
+
+Questa versione include le correzioni Techno/House (Next, avvisi, refill), i 17
+preset, la scelta sullo smartphone dell'algoritmo server/locale e la telemetria
+verso il Monitor riproduzioni del server **0.3.25**. Le sorgenti sono nel ramo
+`release/1.0.9-android-auto-mode-and-monitor`; la firma e la pubblicazione
+richiedono una compilazione release su Windows con la *stessa chiave* della
+release Android installata. La CI GitHub genera solo APK debug **non firmate
+per l'aggiornamento della release**.
+
+## Allineamento, compilazione, firma e pubblicazione da Windows
+
+Usa una shell PowerShell aperta nella cartella del progetto già clonata.
+Non cancellare o sovrascrivere `keystore.properties`, `local.properties`
+e `release-signing.sha256`, che restano **esclusivamente sul PC**.
+
+```powershell
+# Aggiorna i sorgenti locali a origin/main (solo fast-forward, mai reset).
+.\tools\prepara-release-1.0.9.ps1 -Allinea
+
+# Test, debug e release locale firmata. Controlla la fingerprint.
+.\tools\prepara-release-1.0.9.ps1 -Firma
+
+# Solo DOPO il test installato sul telefono: crea v1.0.9 con APK e update.json.
+.\tools\prepara-release-1.0.9.ps1 -Firma -Pubblica -ConfermaTest
+```
+
+L'ultimo comando richiede **GitHub CLI** `gh` già autenticato
+(`gh auth login`) e un `main` locale identico a `origin/main`.
+La pubblicazione si ferma se il tag `v1.0.9` esiste già, se la firma non
+corrisponde a quella precedente o se `update.json` non corrisponde all'APK.
+Prima della pubblicazione, il ramo dev'essere integrato in `main` e la CI
+verde. Il backend 0.3.25 deve essere installato sul server per vedere gli
+stati dei lettori. I client precedenti non inviano heartbeat.
+
+Dettagli modifiche: [note release 1.0.9](docs/release-notes-1.0.9.md).
+
+---
+
+## Archivio istruzioni Android 1.0.8 (storico, non usare per la nuova release)
+
+
 
 **Versione dei sorgenti:** `1.0.8` · **build:** `46` · **pacchetto:** `app.lyra.music` · **aggiornato:** 3 novembre 2026
 
