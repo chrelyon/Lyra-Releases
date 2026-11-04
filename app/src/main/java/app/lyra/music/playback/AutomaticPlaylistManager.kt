@@ -96,7 +96,7 @@ object AutomaticPlaylistManager {
 
     /** Restore binding only for the exact saved automatic queue. Manual queues never adopt it. */
     @Synchronized fun restoreServerBinding(title: String, songs: List<Song>) {
-        if (session != null || songs.isEmpty() || !PersonalizationSettings.enabled.value) return
+        if (session != null || songs.isEmpty() || !PersonalizationSettings.useServerAlgorithm.value) return
         val saved = ServerPlaylistClient.savedIntent() ?: return
         if (saved.third != title) return
         remote=ServerPlaylistClient(saved.first,saved.second,title,restore=true)
@@ -138,7 +138,7 @@ object AutomaticPlaylistManager {
         val name=artist.trim().take(120)
         require(name.isNotBlank())
         val title="Playlist Automatica · $name"
-        if (!PersonalizationSettings.enabled.value) {
+        if (!PersonalizationSettings.useServerAlgorithm.value) {
             val expected=generation.get()
             val songs=repository.artistSongs(name)
             if (generation.get()!=expected) throw CancellationException("Playlist cambiata")
@@ -227,24 +227,25 @@ object AutomaticPlaylistManager {
         // Music genres are verified per recording. Moods are different:
         // prefer track-level mood evidence, but retain the existing context radio
         // if no independent evidence is available for that atmosphere.
-        if (VerifiedGenrePlaylistClient.supported(presetId)) {
+        if (PersonalizationSettings.useServerAlgorithm.value && VerifiedGenrePlaylistClient.supported(presetId)) {
             val isMood = VerifiedGenrePlaylistClient.isMood(presetId)
             if (!VerifiedGenrePlaylistClient.enabled(presetId)) {
-                if (!isMood) {
-                    notice.value = "Classificatore non configurato: verifica connessione e token Lyra."
-                    throw IllegalStateException(
-                        "Classificatore Lyra non configurato. Controlla connessione e token nelle Impostazioni."
-                    )
+                notice.value = if (isMood) {
+                    "Ricerca atmosfere non configurata: utilizzo la radio contestuale dello smartphone."
+                } else {
+                    "Classificatore Lyra non configurato: utilizzo la ricerca dello smartphone, genere non verificato."
                 }
-                notice.value = "Ricerca delle atmosfere non configurata: utilizzo la radio contestuale."
             } else {
                 val selected = try {
                     VerifiedGenrePlaylistClient.fetch(presetId, limit = 40)
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (error: Exception) {
-                    if (!isMood) throw error
-                    notice.value = "Nessun brano con atmosfera verificata: uso la radio contestuale."
+                    notice.value = if (isMood) {
+                        "Nessun brano con atmosfera verificata: uso la radio contestuale."
+                    } else {
+                        "Ricerca server non riuscita: uso la ricerca dello smartphone (genere da verificare)."
+                    }
                     Log.w(
                         "LYRA_AUTO_PLAYLIST",
                         "moodVerifiedUnavailable preset=$presetId message=${error.message}",
@@ -301,7 +302,7 @@ object AutomaticPlaylistManager {
             }
         }
 
-        val client=if (!PersonalizationSettings.enabled.value) null else serverGenres[presetId]?.let {
+        val client=if (!PersonalizationSettings.useServerAlgorithm.value) null else serverGenres[presetId]?.let {
             ServerPlaylistClient(if (it.contains('|')) "genres" else "genre",it,"Playlist Automatica · ${preset.title}")
         } ?: if (presetId in setOf("relax","energia","party","focus","romantica")) {
             ServerPlaylistClient("context",presetId,"Playlist Automatica · ${preset.title}")
@@ -444,7 +445,7 @@ object AutomaticPlaylistManager {
             title == "Playlist Automatica · ${it.title}" &&
                 VerifiedGenrePlaylistClient.supported(it.id)
         }
-        if (strict != null) {
+        if (strict != null && PersonalizationSettings.useServerAlgorithm.value) {
             if (!VerifiedGenrePlaylistClient.enabled(strict.id)) {
                 throw IllegalStateException("Classificatore Lyra non configurato per la ripresa della playlist.")
             }
