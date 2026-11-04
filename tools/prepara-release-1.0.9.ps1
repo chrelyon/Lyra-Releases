@@ -146,7 +146,24 @@ try {
     if ('Lyra-1.0.9.apk' -notin $assetNames -or 'update.json' -notin $assetNames) {
         throw 'La Release manca degli asset APK o update.json: controlla GitHub.'
     }
-    Write-Host 'Release GitHub v1.0.9 pubblicata con APK firmata e update.json.' -ForegroundColor Green
+    $verifyDir = Join-Path ([System.IO.Path]::GetTempPath()) ('lyra-109-verify-' + [guid]::NewGuid().ToString('N'))
+    New-Item -Path $verifyDir -ItemType Directory -Force | Out-Null
+    try {
+        Run 'Download di verifica della Release pubblicata' {
+            gh release download 'v1.0.9' --repo 'chrelyon/Lyra-Releases' `
+                --pattern 'Lyra-1.0.9.apk' --pattern 'update.json' --dir $verifyDir
+        }
+        $downloadSha = (Get-FileHash (Join-Path $verifyDir 'Lyra-1.0.9.apk') -Algorithm SHA256).Hash.ToLowerInvariant()
+        $downloadMeta = Get-Content (Join-Path $verifyDir 'update.json') -Raw | ConvertFrom-Json
+        if ($downloadSha -ne $digest -or $downloadMeta.sha256 -ne $digest -or
+            $downloadMeta.versionCode -ne 47) {
+            throw 'Release remota non coerente: differenza SHA256, versione o manifest.'
+        }
+    }
+    finally {
+        if (Test-Path $verifyDir) { Remove-Item $verifyDir -Recurse -Force }
+    }
+    Write-Host 'Release GitHub v1.0.9 verificata: stessi byte e stesso manifest della APK firmata locale.' -ForegroundColor Green
 }
 finally {
     Pop-Location
