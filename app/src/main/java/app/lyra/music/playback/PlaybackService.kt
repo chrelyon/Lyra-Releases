@@ -98,6 +98,14 @@ class PlaybackService : MediaLibraryService() {
     private val discoveryPlaylistCache = mutableMapOf<String, Playlist>()
     private var localSongsCache: List<Song> = emptyList()
     private val playlistContentCache = mutableMapOf<String, PlaylistContent>()
+    private var playlistAccountGeneration: Long = Long.MIN_VALUE
+
+    private fun ensureGooglePlaylistCacheIsolation() {
+        val generation = YouTubeAuthorizationManager.state.value.authorizationGeneration
+        if (generation == playlistAccountGeneration) return
+        playlistAccountGeneration = generation
+        playlistContentCache.clear()
+    }
     private val autoSongContexts = mutableMapOf<String, AutoSongContext>()
     private val searchResultCache = mutableMapOf<String, List<Song>>()
 
@@ -437,6 +445,7 @@ class PlaybackService : MediaLibraryService() {
             pageSize: Int,
             params: LibraryParams?,
         ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
+            ensureGooglePlaylistCacheIsolation()
             if (parentId == AUTO_LIBRARY_ROOT_ID) {
                 // Android Auto raccomanda pochi nodi di primo livello
                 // (tipicamente <= 4). Evitiamo quindi di mettere tutte le
@@ -814,11 +823,16 @@ class PlaybackService : MediaLibraryService() {
                 )
             }
 
+            val generationAtRequest = YouTubeAuthorizationManager.state.value.authorizationGeneration
             val future = SettableFuture.create<LibraryResult<ImmutableList<MediaItem>>>()
             serviceScope.launch {
                 runCatching {
                     loadPlaylistForAuto(playlistId)
                 }.onSuccess { content ->
+                    if (generationAtRequest != YouTubeAuthorizationManager.state.value.authorizationGeneration) {
+                        future.set(LibraryResult.ofItemList(emptyList(), params))
+                        return@onSuccess
+                    }
                     playlistContentCache[playlistId] = content
                     val items = buildSongMediaItems(content).forBrowser(session, browser, page, pageSize)
                     Log.d(
@@ -843,6 +857,7 @@ class PlaybackService : MediaLibraryService() {
             browser: MediaSession.ControllerInfo,
             mediaId: String,
         ): ListenableFuture<LibraryResult<MediaItem>> {
+            ensureGooglePlaylistCacheIsolation()
             if (mediaId == AUTO_LIBRARY_ROOT_ID) {
                 return Futures.immediateFuture(
                     LibraryResult.ofItem(buildLibraryRoot(), null)

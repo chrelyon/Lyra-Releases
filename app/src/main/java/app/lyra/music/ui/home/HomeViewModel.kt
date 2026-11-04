@@ -11,6 +11,7 @@ import app.lyra.music.youtube.auth.AuthorizationRequiredException
 import app.lyra.music.youtube.auth.YouTubeAuthorizationManager
 import app.lyra.music.youtube.auth.YouTubeAuthorizationState
 import app.lyra.music.youtube.cache.YouTubeLibraryCache
+import app.lyra.music.youtube.cache.GoogleLibraryAccountPolicy
 import app.lyra.music.youtube.repository.YouTubeMusicRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -60,6 +61,11 @@ class HomeViewModel : ViewModel() {
                     // aggiornano lo stesso StateFlow. Non devono provocare una nuova
                     // sincronizzazione o far lampeggiare/sparire la libreria.
                     if (handledAuthorizationGeneration != state.authorizationGeneration) {
+                        if (handledAuthorizationGeneration != null) {
+                            // Previous account's in-memory playlist list cannot survive a switch.
+                            clearDisplayedLibrary()
+                            lastSuccessfulSyncEpochMs = 0L
+                        }
                         handledAuthorizationGeneration = state.authorizationGeneration
                         restoreCacheAndSync()
                     }
@@ -130,6 +136,7 @@ class HomeViewModel : ViewModel() {
         if (!authorizationState.value.isAuthorized) return
         if (_isLoading.value || _isRefreshing.value) return
 
+        val requestGeneration = authorizationState.value.authorizationGeneration
         viewModelScope.launch {
             val hasVisibleCache = _playlists.value.isNotEmpty()
             _isLoading.value = showBlockingSpinner && !hasVisibleCache
@@ -140,6 +147,11 @@ class HomeViewModel : ViewModel() {
             runCatching {
                 repository.getLibrarySnapshot()
             }.onSuccess { snapshot ->
+                if (!GoogleLibraryAccountPolicy.sameSession(
+                        requestGeneration,
+                        authorizationState.value.isAuthorized,
+                        authorizationState.value.authorizationGeneration,
+                    )) return@onSuccess
                 applySnapshot(snapshot)
                 YouTubeLibraryCache.save(snapshot)
                 Log.d(
@@ -147,6 +159,11 @@ class HomeViewModel : ViewModel() {
                     "syncComplete musicPlaylists=${snapshot.playlists.size}"
                 )
             }.onFailure { error ->
+                if (!GoogleLibraryAccountPolicy.sameSession(
+                        requestGeneration,
+                        authorizationState.value.isAuthorized,
+                        authorizationState.value.authorizationGeneration,
+                    )) return@onFailure
                 if (error is AuthorizationRequiredException) {
                     _errorMessage.value = null
                 } else if (hasVisibleCache) {

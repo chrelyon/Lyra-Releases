@@ -78,15 +78,18 @@ object YouTubeLikesManager {
         // Feedback immediato del cuore; in caso di errore ripristiniamo lo stato.
         _ratings.value = _ratings.value + (videoId to newValue)
 
+        val expectedGeneration = authorizationGeneration
         scope.launch {
             runCatching {
                 YouTubeDataApiClient.setVideoLiked(videoId, newValue)
             }.onSuccess {
+                if (expectedGeneration != YouTubeAuthorizationManager.state.value.authorizationGeneration) return@onSuccess
                 val change = LikeChange(song = song, liked = newValue)
                 rememberChange(change)
                 _changes.emit(change)
                 Log.d(TAG, "ratingChanged videoId=$videoId liked=$newValue")
             }.onFailure { error ->
+                if (expectedGeneration != YouTubeAuthorizationManager.state.value.authorizationGeneration) return@onFailure
                 _ratings.value = _ratings.value + (videoId to previousValue)
                 _errorMessage.value = error.message ?: "Impossibile aggiornare il Mi piace."
                 Log.e(TAG, "ratingChangeFailed videoId=$videoId message=${error.message}", error)
@@ -122,6 +125,11 @@ object YouTubeLikesManager {
         _errorMessage.value = null
     }
 
+    /** Called on every login/logout/account selection, including Android Auto sessions. */
+    fun onAuthorizationChanged() {
+        syncAuthorizationGeneration()
+    }
+
     private fun rememberChange(change: LikeChange) {
         val updated = LinkedHashMap(_recentChanges.value)
         updated.remove(change.song.id)
@@ -147,9 +155,11 @@ object YouTubeLikesManager {
         if (clean.isEmpty()) return
         synchronized(ratingLoadsInFlight) { ratingLoadsInFlight += clean }
 
+        val expectedGeneration = authorizationGeneration
         scope.launch {
             runCatching { YouTubeDataApiClient.getLikedRatings(clean) }
                 .onSuccess { result ->
+                    if (expectedGeneration != YouTubeAuthorizationManager.state.value.authorizationGeneration) return@onSuccess
                     // Un ID non restituito viene trattato come non piaciuto.
                     val completed = clean.associateWith { result[it] == true }
                     _ratings.value = _ratings.value + completed

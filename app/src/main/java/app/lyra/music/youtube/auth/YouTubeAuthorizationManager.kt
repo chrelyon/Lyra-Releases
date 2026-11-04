@@ -5,6 +5,11 @@ import android.app.Activity
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.util.Base64
+import app.lyra.music.youtube.cache.YouTubeLibraryCache
+import app.lyra.music.youtube.likes.YouTubeLikesManager
+import java.security.MessageDigest
+import java.security.SecureRandom
 import app.lyra.music.diagnostics.LyraLog as Log
 import com.google.android.gms.auth.api.identity.AuthorizationRequest
 import com.google.android.gms.auth.api.identity.AuthorizationResult
@@ -55,7 +60,10 @@ object YouTubeAuthorizationManager {
     private var appContext: Context? = null
     private var accessToken: String? = null
     private var authorizedAccount: Account? = null
+    private var accountSubject: String? = null
     private var silentRefreshInFlight = false
+    private var pendingAccountSelection = false
+    private var authorizationSerial: Long = 0L
     private val profileScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val _state = MutableStateFlow(YouTubeAuthorizationState())
@@ -74,11 +82,12 @@ object YouTubeAuthorizationManager {
      */
     fun refreshSilently() {
         val context = appContext ?: return
-        if (silentRefreshInFlight) {
-            Log.d(TAG, "silentCheck skipped reason=inFlight")
+        if (silentRefreshInFlight || _state.value.isAuthorizing) {
+            Log.d(TAG, "silentCheck skipped reason=busy")
             return
         }
         silentRefreshInFlight = true
+        val serial = ++authorizationSerial
 
         _state.value = _state.value.copy(
             isChecking = true,
@@ -89,6 +98,7 @@ object YouTubeAuthorizationManager {
         Identity.getAuthorizationClient(context)
             .authorize(buildAuthorizationRequest(forceAccountSelection = false))
             .addOnSuccessListener { result ->
+                if (serial != authorizationSerial) return@addOnSuccessListener
                 silentRefreshInFlight = false
                 if (result.hasResolution()) {
                     accessToken = null
@@ -105,6 +115,7 @@ object YouTubeAuthorizationManager {
                 }
             }
             .addOnFailureListener { error ->
+                if (serial != authorizationSerial) return@addOnFailureListener
                 silentRefreshInFlight = false
                 accessToken = null
                 authorizedAccount = null
@@ -126,6 +137,9 @@ object YouTubeAuthorizationManager {
         onResolutionRequired: (PendingIntent) -> Unit,
     ) {
         initialize(activity.applicationContext)
+        val serial = ++authorizationSerial
+        silentRefreshInFlight = false
+        pendingAccountSelection = forceAccountSelection
 
         _state.value = _state.value.copy(
             isChecking = false,
@@ -136,6 +150,7 @@ object YouTubeAuthorizationManager {
         Identity.getAuthorizationClient(activity)
             .authorize(buildAuthorizationRequest(forceAccountSelection))
             .addOnSuccessListener { result ->
+                if (serial != authorizationSerial) return@addOnSuccessListener
                 if (result.hasResolution()) {
                     val pendingIntent = result.pendingIntent
                     if (pendingIntent == null) {
@@ -167,6 +182,8 @@ object YouTubeAuthorizationManager {
                 }
             }
             .addOnFailureListener { error ->
+                if (serial != authorizationSerial) return@addOnFailureListener
+                pendingAccountSelection = false
                 accessToken = null
                 authorizedAccount = null
                 _state.value = YouTubeAuthorizationState(
@@ -185,6 +202,7 @@ object YouTubeAuthorizationManager {
         data: Intent?,
     ) {
         if (resultCode != Activity.RESULT_OK || data == null) {
+            pendingAccountSelection = false
             _state.value = _state.value.copy(
                 isChecking = false,
                 isAuthorizing = false,
@@ -211,10 +229,40 @@ object YouTubeAuthorizationManager {
         }
     }
 
+    /**
+     * Non-identifying account fingerprint, salted per local installation.
+     * If Google omits account identity we deliberately disable playlist cache.
+     * Never expose/store e-mail, OAuth token or account identifier in a backup.
+     */
+    fun accountCacheKeyOrNull(): String? {
+        if (!_state.value.isAuthorized) return null
+        val account = authorizedAccount
+        val principal = if (account != null) {
+            account.type + ":" + account.name.lowercase()
+        } else {
+            accountSubject?.takeIf { it.isNotBlank() }?.let { "sub:" + it }
+                ?: return null
+        }
+        val context = appContext ?: return null
+        val prefs = context.getSharedPreferences("lyra_google_library_cache_identity", Context.MODE_PRIVATE)
+        var salt = prefs.getString("cache_salt", null)
+        if (salt.isNullOrEmpty()) {
+            val bytes = ByteArray(24).also(SecureRandom()::nextBytes)
+            salt = Base64.encodeToString(bytes, Base64.NO_WRAP)
+            prefs.edit().putString("cache_salt", salt).commit()
+        }
+        val source = salt + "\\u0000" + principal
+        val digest = MessageDigest.getInstance("SHA-256")
+            .digest(source.toByteArray(StandardCharsets.UTF_8))
+        return Base64.encodeToString(digest, Base64.NO_WRAP or Base64.URL_SAFE)
+    }
+
     fun accessTokenOrNull(): String? = accessToken
 
     /** Revoca l'accesso Google concesso a Lyra e cancella lo stato locale. */
     fun disconnect(onComplete: (Boolean) -> Unit = {}) {
+        val serial = ++authorizationSerial
+        pendingAccountSelection = false
         val context = appContext
         if (context == null) {
             clearLocalAuthorizationState(
@@ -237,6 +285,7 @@ object YouTubeAuthorizationManager {
         Identity.getAuthorizationClient(context)
             .revokeAccess(builder.build())
             .addOnCompleteListener { task ->
+                if (serial != authorizationSerial) return@addOnCompleteListener
                 clearLocalAuthorizationState(
                     errorMessage = if (task.isSuccessful) {
                         null
@@ -255,6 +304,7 @@ object YouTubeAuthorizationManager {
         val invalidToken = accessToken ?: return
 
         accessToken = null
+        YouTubeLibraryCache.clear()
         _state.value = _state.value.copy(
             isAuthorized = false,
             isChecking = true,
@@ -295,6 +345,8 @@ object YouTubeAuthorizationManager {
     ) {
         val token = result.accessToken
         val granted = result.grantedScopes
+        val requestedSwitch = pendingAccountSelection
+        pendingAccountSelection = false
         val youtubeGranted = granted.contains(YOUTUBE_FORCE_SSL_SCOPE)
 
         if (token.isNullOrBlank() || !youtubeGranted) {
@@ -313,16 +365,23 @@ object YouTubeAuthorizationManager {
             return
         }
 
-        accessToken = token
-        authorizedAccount = runCatching {
+        val previousState = _state.value
+        val previousAccount = authorizedAccount
+        val nextAccount = runCatching {
             result.toGoogleSignInAccount()?.account
         }.getOrNull()
-
-        val previousState = _state.value
-        val nextGeneration = if (previousState.isAuthorized) {
-            previousState.authorizationGeneration
-        } else {
+        val changedAccount = requestedSwitch || (previousState.isAuthorized && previousAccount != nextAccount)
+        if (changedAccount) {
+            // No playlist/likes snapshot for the previous Google account survives.
+            YouTubeLibraryCache.clear()
+        }
+        accessToken = token
+        authorizedAccount = nextAccount
+        accountSubject = null
+        val nextGeneration = if (!previousState.isAuthorized || changedAccount) {
             previousState.authorizationGeneration + 1L
+        } else {
+            previousState.authorizationGeneration
         }
         _state.value = previousState.copy(
             isChecking = false,
@@ -331,6 +390,7 @@ object YouTubeAuthorizationManager {
             authorizationGeneration = nextGeneration,
             errorMessage = null,
         )
+        YouTubeLikesManager.onAuthorizationChanged()
 
         // Non loggare mai token, e-mail, nome o identificatori account Google.
         Log.d(
@@ -353,6 +413,7 @@ object YouTubeAuthorizationManager {
                 _state.value.authorizationGeneration == nextGeneration &&
                 accessToken == token
             ) {
+                accountSubject = profile.subject
                 _state.value = _state.value.copy(
                     profileName = profile.name,
                     profilePictureUrl = profile.pictureUrl,
@@ -388,6 +449,7 @@ object YouTubeAuthorizationManager {
 
             val json = JSONObject(body)
             GoogleProfile(
+                subject = json.optString("sub").takeIf { it.isNotBlank() },
                 name = json.optString("name").takeIf { it.isNotBlank() },
                 pictureUrl = json.optString("picture").takeIf { it.isNotBlank() },
             )
@@ -402,6 +464,9 @@ object YouTubeAuthorizationManager {
         silentRefreshInFlight = false
         accessToken = null
         authorizedAccount = null
+        pendingAccountSelection = false
+        accountSubject = null
+        YouTubeLibraryCache.clear()
         _state.value = YouTubeAuthorizationState(
             isChecking = false,
             isAuthorizing = false,
@@ -411,6 +476,7 @@ object YouTubeAuthorizationManager {
             profilePictureUrl = null,
             errorMessage = errorMessage,
         )
+        YouTubeLikesManager.onAuthorizationChanged()
     }
 
     private fun friendlyError(error: Throwable): String {
@@ -420,6 +486,7 @@ object YouTubeAuthorizationManager {
     }
 
     private data class GoogleProfile(
+        val subject: String?,
         val name: String?,
         val pictureUrl: String?,
     )

@@ -2,6 +2,7 @@ package app.lyra.music.youtube.cache
 
 import android.content.Context
 import app.lyra.music.diagnostics.LyraLog as Log
+import app.lyra.music.youtube.auth.YouTubeAuthorizationManager
 import app.lyra.music.core.model.Playlist
 import app.lyra.music.core.model.YouTubeChannel
 import app.lyra.music.core.model.YouTubeLibrarySnapshot
@@ -20,6 +21,7 @@ object YouTubeLibraryCache {
     private const val TAG = "LYRA_LIBRARY"
     private const val PREFS_NAME = "lyra_youtube_library_cache"
     private const val KEY_SNAPSHOT = "snapshot_v1"
+    private const val KEY_OWNER = "snapshot_owner_v2"
 
     private var context: Context? = null
 
@@ -31,10 +33,18 @@ object YouTubeLibraryCache {
 
     fun load(): YouTubeLibrarySnapshot? {
         val appContext = context ?: return null
-        val raw = appContext
-            .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .getString(KEY_SNAPSHOT, null)
-            ?: return null
+        val currentOwner = YouTubeAuthorizationManager.accountCacheKeyOrNull()
+            ?: return null // Anonymous mode must never show previous Google playlists.
+        val prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val savedOwner = prefs.getString(KEY_OWNER, null)
+        if (!GoogleLibraryAccountPolicy.mayRead(
+                YouTubeAuthorizationManager.state.value.isAuthorized,
+                savedOwner, currentOwner,
+            )) {
+            clear()
+            return null
+        }
+        val raw = prefs.getString(KEY_SNAPSHOT, null) ?: return null
 
         return runCatching {
             decode(JSONObject(raw))
@@ -52,10 +62,11 @@ object YouTubeLibraryCache {
 
     fun save(snapshot: YouTubeLibrarySnapshot) {
         val appContext = context ?: return
-        appContext
-            .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .edit()
+        val owner = YouTubeAuthorizationManager.accountCacheKeyOrNull() ?: return
+        val prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit()
             .putString(KEY_SNAPSHOT, encode(snapshot).toString())
+            .putString(KEY_OWNER, owner)
             .apply()
 
         Log.d(
@@ -77,6 +88,7 @@ object YouTubeLibraryCache {
             .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
             .remove(KEY_SNAPSHOT)
+            .remove(KEY_OWNER)
             .apply()
         Log.d(TAG, "cacheCleared")
     }
