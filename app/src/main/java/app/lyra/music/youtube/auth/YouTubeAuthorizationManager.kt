@@ -59,6 +59,7 @@ object YouTubeAuthorizationManager {
     private var appContext: Context? = null
     private var accessToken: String? = null
     private var authorizedAccount: Account? = null
+    private var accountSubject: String? = null
     private var silentRefreshInFlight = false
     private var pendingAccountSelection = false
     private var authorizationSerial: Long = 0L
@@ -234,7 +235,13 @@ object YouTubeAuthorizationManager {
      */
     fun accountCacheKeyOrNull(): String? {
         if (!_state.value.isAuthorized) return null
-        val account = authorizedAccount ?: return null
+        val account = authorizedAccount
+        val principal = if (account != null) {
+            account.type + ":" + account.name.lowercase()
+        } else {
+            accountSubject?.takeIf { it.isNotBlank() }?.let { "sub:" + it }
+                ?: return null
+        }
         val context = appContext ?: return null
         val prefs = context.getSharedPreferences("lyra_google_library_cache_identity", Context.MODE_PRIVATE)
         var salt = prefs.getString("cache_salt", null)
@@ -243,7 +250,7 @@ object YouTubeAuthorizationManager {
             salt = Base64.encodeToString(bytes, Base64.NO_WRAP)
             prefs.edit().putString("cache_salt", salt).commit()
         }
-        val source = salt + "\\u0000" + account.type + "\\u0000" + account.name.lowercase()
+        val source = salt + "\\u0000" + principal
         val digest = MessageDigest.getInstance("SHA-256")
             .digest(source.toByteArray(StandardCharsets.UTF_8))
         return Base64.encodeToString(digest, Base64.NO_WRAP or Base64.URL_SAFE)
@@ -369,6 +376,7 @@ object YouTubeAuthorizationManager {
         }
         accessToken = token
         authorizedAccount = nextAccount
+        accountSubject = null
         val nextGeneration = if (!previousState.isAuthorized || changedAccount) {
             previousState.authorizationGeneration + 1L
         } else {
@@ -403,6 +411,7 @@ object YouTubeAuthorizationManager {
                 _state.value.authorizationGeneration == nextGeneration &&
                 accessToken == token
             ) {
+                accountSubject = profile.subject
                 _state.value = _state.value.copy(
                     profileName = profile.name,
                     profilePictureUrl = profile.pictureUrl,
@@ -438,6 +447,7 @@ object YouTubeAuthorizationManager {
 
             val json = JSONObject(body)
             GoogleProfile(
+                subject = json.optString("sub").takeIf { it.isNotBlank() },
                 name = json.optString("name").takeIf { it.isNotBlank() },
                 pictureUrl = json.optString("picture").takeIf { it.isNotBlank() },
             )
@@ -453,6 +463,7 @@ object YouTubeAuthorizationManager {
         accessToken = null
         authorizedAccount = null
         pendingAccountSelection = false
+        accountSubject = null
         YouTubeLibraryCache.clear()
         _state.value = YouTubeAuthorizationState(
             isChecking = false,
@@ -472,6 +483,7 @@ object YouTubeAuthorizationManager {
     }
 
     private data class GoogleProfile(
+        val subject: String?,
         val name: String?,
         val pictureUrl: String?,
     )
