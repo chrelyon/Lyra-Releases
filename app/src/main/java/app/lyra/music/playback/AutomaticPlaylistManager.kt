@@ -6,6 +6,7 @@ import app.lyra.music.personalization.ServerPlaylistClient
 import app.lyra.music.personalization.ServerQueuePolicy
 import kotlinx.coroutines.CancellationException
 import app.lyra.music.genre.GenreClassifierClient
+import app.lyra.music.genre.GenreClassifierSettings
 import app.lyra.music.genre.VerifiedGenrePlaylistClient
 import app.lyra.music.diagnostics.LyraLog as Log
 import app.lyra.music.personalization.AutomaticVarietyPolicy
@@ -52,6 +53,8 @@ object AutomaticPlaylistManager {
     )
 
     val source=kotlinx.coroutines.flow.MutableStateFlow("Locale")
+    /** Visible feedback for automatic playlists, including a short verified catalog. */
+    val notice=kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
     private val repository = AutomaticPlaylistRepository()
     private val mutex = Mutex()
 
@@ -74,6 +77,7 @@ object AutomaticPlaylistManager {
         remote?.invalidate()
         remote = null
         source.value="Locale"
+        notice.value=null
         session = null
         knownSongs = emptyList()
     }
@@ -92,7 +96,7 @@ object AutomaticPlaylistManager {
 
     /** Restore binding only for the exact saved automatic queue. Manual queues never adopt it. */
     @Synchronized fun restoreServerBinding(title: String, songs: List<Song>) {
-        if (session != null || songs.isEmpty() || !PersonalizationSettings.enabled.value) return
+        if (session != null || songs.isEmpty() || !PersonalizationSettings.useServerAlgorithm.value) return
         val saved = ServerPlaylistClient.savedIntent() ?: return
         if (saved.third != title) return
         remote=ServerPlaylistClient(saved.first,saved.second,title,restore=true)
@@ -134,7 +138,7 @@ object AutomaticPlaylistManager {
         val name=artist.trim().take(120)
         require(name.isNotBlank())
         val title="Playlist Automatica · $name"
-        if (!PersonalizationSettings.enabled.value) {
+        if (!PersonalizationSettings.useServerAlgorithm.value) {
             val expected=generation.get()
             val songs=repository.artistSongs(name)
             if (generation.get()!=expected) throw CancellationException("Playlist cambiata")
@@ -220,46 +224,85 @@ object AutomaticPlaylistManager {
         val preset = AutomaticPlaylistCatalog.preset(presetId)
             ?: throw IllegalArgumentException("Preset automatico sconosciuto: $presetId")
 
-        // The verified recording API is authoritative for strict music genres.
-        // Preserve the existing v3 queue protocol for all other playlist types.
-        if (VerifiedGenrePlaylistClient.enabled(presetId)) {
-            val selected = VerifiedGenrePlaylistClient.fetch(presetId, limit = 40)
-            if (generation.get()!=expectedGeneration) throw CancellationException("Playlist cambiata")
-            return mutex.withLock {
-                if (generation.get()!=expectedGeneration) throw CancellationException("Playlist cambiata")
-                val title = "Playlist Automatica · ${preset.title}"
-                val salt = System.currentTimeMillis() xor System.nanoTime()
-                val ranked = RecommendationEngine.rank(
-                    candidates = selected,
-                    context = RecommendationEngine.SessionContext(
-                        title = title, contextTag = preset.id, sessionSalt = salt,
-                    ),
-                )
-                val queue = AutomaticVarietyPolicy.diversifyRanked(
-                    ranked = ranked,
-                    recentProposalIds = if (PersonalizationSettings.avoidRepeats.value)
-                        AutomaticPlaylistVarietyStore.recentProposals(preset.id) else emptySet(),
-                    salt = salt,
-                )
-                if (queue.isEmpty()) throw NoVerifiedCandidatesException()
-                remote?.invalidate()
-                remote = null
-                session = Session(
-                    title = title, contextTag = preset.id, sessionSalt = salt,
-                    endpoint = WatchEndpoint(videoId = queue.last().id),
-                    continuation = null,
-                    seenIds = queue.mapTo(mutableSetOf()) { it.id },
-                    tailSeed = queue.last(), strictGenre = preset.id,
-                )
-                knownSongs = queue
-                source.value = "Server · genere verificato"
-                AutomaticPlaylistVarietyStore.remember(preset.id, emptyList(), queue)
-                Log.d("LYRA_AUTO_VARIETY", "strictGenre=${preset.id} verifiedItems=${queue.size}")
-                StartResult(title, queue)
+        // Music genres are verified per recording. Moods are different:
+        // prefer track-level mood evidence, but retain the existing context radio
+        // if no independent evidence is available for that atmosphere.
+        if (PersonalizationSettings.useServerAlgorithm.value && VerifiedGenrePlaylistClient.supported(presetId)) {
+            val isMood = VerifiedGenrePlaylistClient.isMood(presetId)
+            if (!VerifiedGenrePlaylistClient.enabled(presetId)) {
+                notice.value = if (isMood) {
+                    "Ricerca atmosfere non configurata: utilizzo la radio contestuale dello smartphone."
+                } else {
+                    "Classificatore Lyra non configurato: utilizzo la ricerca dello smartphone, genere non verificato."
+                }
+            } else {
+                val selected = try {
+                    VerifiedGenrePlaylistClient.fetch(presetId, limit = 40)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    notice.value = if (isMood) {
+                        "Nessun brano con atmosfera verificata: uso la radio contestuale."
+                    } else {
+                        "Ricerca server non riuscita: uso la ricerca dello smartphone (genere da verificare)."
+                    }
+                    Log.w(
+                        "LYRA_AUTO_PLAYLIST",
+                        "moodVerifiedUnavailable preset=$presetId message=${error.message}",
+                    )
+                    null
+                }
+                if (selected != null) {
+                    if (generation.get()!=expectedGeneration) throw CancellationException("Playlist cambiata")
+                    return mutex.withLock {
+                        if (generation.get()!=expectedGeneration) throw CancellationException("Playlist cambiata")
+                        val title = "Playlist Automatica · ${preset.title}"
+                        val salt = System.currentTimeMillis() xor System.nanoTime()
+                        val ranked = RecommendationEngine.rank(
+                            candidates = selected,
+                            context = RecommendationEngine.SessionContext(
+                                title = title, contextTag = preset.id, sessionSalt = salt,
+                            ),
+                        )
+                        val queue = AutomaticVarietyPolicy.diversifyRanked(
+                            ranked = ranked,
+                            recentProposalIds = if (PersonalizationSettings.avoidRepeats.value)
+                                AutomaticPlaylistVarietyStore.recentProposals(preset.id) else emptySet(),
+                            salt = salt,
+                        )
+                        Log.d(
+                            "LYRA_AUTO_PLAYLIST",
+                            "verifiedStart preset=$presetId mood=$isMood serverItems=${selected.size} " +
+                                "ranked=${ranked.size} playable=${queue.size} " +
+                                "excludedByRanking=${selected.size - ranked.size}",
+                        )
+                        if (queue.isEmpty()) throw NoVerifiedCandidatesException()
+                        notice.value = when (queue.size) {
+                            1 -> "Playlist incompleta: soltanto 1 brano verificato per ${preset.title}."
+                            in 2..4 -> "Catalogo ${preset.title} limitato: solo ${queue.size} brani verificati."
+                            else -> null
+                        }
+                        remote?.invalidate()
+                        remote = null
+                        session = Session(
+                            title = title, contextTag = preset.id, sessionSalt = salt,
+                            endpoint = WatchEndpoint(videoId = queue.last().id),
+                            continuation = null,
+                            seenIds = queue.mapTo(mutableSetOf()) { it.id },
+                            tailSeed = queue.last(), strictGenre = preset.id,
+                        )
+                        knownSongs = queue
+                        source.value = if (isMood) "Server · atmosfera verificata"
+                            else "Server · genere verificato"
+                        AutomaticPlaylistVarietyStore.remember(preset.id, emptyList(), queue)
+                        Log.d("LYRA_AUTO_VARIETY", "strictPreset=${preset.id} verifiedItems=${queue.size}")
+                        StartResult(title, queue)
+                    }
+                }
             }
         }
 
-        val client=if (!PersonalizationSettings.enabled.value) null else serverGenres[presetId]?.let {
+        val client=if (!PersonalizationSettings.useServerAlgorithm.value) null else serverGenres[presetId]?.let {
             ServerPlaylistClient(if (it.contains('|')) "genres" else "genre",it,"Playlist Automatica · ${preset.title}")
         } ?: if (presetId in setOf("relax","energia","party","focus","romantica")) {
             ServerPlaylistClient("context",presetId,"Playlist Automatica · ${preset.title}")
@@ -400,9 +443,12 @@ object AutomaticPlaylistManager {
 
         val strict = AutomaticPlaylistCatalog.presets.firstOrNull {
             title == "Playlist Automatica · ${it.title}" &&
-                VerifiedGenrePlaylistClient.enabled(it.id)
+                VerifiedGenrePlaylistClient.supported(it.id)
         }
-        if (strict != null) {
+        if (strict != null && PersonalizationSettings.useServerAlgorithm.value) {
+            if (!VerifiedGenrePlaylistClient.enabled(strict.id)) {
+                throw IllegalStateException("Classificatore Lyra non configurato per la ripresa della playlist.")
+            }
             val eligible = VerifiedGenrePlaylistClient.fetch(strict.id, limit = 50)
             val verified = eligible.associateBy { it.id }
             val restored = clean.mapNotNull { verified[it.id] }.ifEmpty { eligible }
@@ -419,6 +465,8 @@ object AutomaticPlaylistManager {
             )
             knownSongs = restored
             source.value = "Server · genere verificato"
+            notice.value = if (restored.size < 2)
+                "Playlist incompleta: soltanto 1 brano verificato disponibile." else null
             return@withLock StartResult(title, restored)
         }
         val batch = repository.fromSeed(tail)
@@ -628,8 +676,15 @@ object AutomaticPlaylistManager {
                     current.strictGenre, current.seenIds, limit = 20,
                 )
             } catch (e: CancellationException) { throw e }
-              catch (_: Exception) {
+              catch (error: Exception) {
                 source.value = "Server · generi non disponibili"
+                notice.value = "Impossibile caricare altri brani del genere richiesto. Riprova con Next."
+                Log.w(
+                    "LYRA_AUTO_PLAYLIST",
+                    "verifiedRefillFailed genre=${current.strictGenre} reason=${error.javaClass.simpleName} " +
+                        "message=${error.message}",
+                    error,
+                )
                 return@withLock emptyList()
             }
             if (session !== current) return@withLock emptyList()
@@ -642,6 +697,14 @@ object AutomaticPlaylistManager {
                     current.strictGenre, emptyList(), fresh, recordOpening = false,
                 )
             }
+            notice.value = if (fresh.isEmpty()) {
+                "Nessun altro brano ${current.strictGenre} verificato nel catalogo. Riprova più tardi."
+            } else null
+            Log.d(
+                "LYRA_AUTO_PLAYLIST",
+                "verifiedRefill genre=${current.strictGenre} returned=${next.size} " +
+                    "added=${fresh.size} total=${knownSongs.size}",
+            )
             return@withLock fresh
         }
 

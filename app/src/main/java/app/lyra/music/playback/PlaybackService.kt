@@ -82,6 +82,7 @@ class PlaybackService : MediaLibraryService() {
     private var player: ExoPlayer? = null
     private var deferredPlaybackResolver: LyraPlaybackDataSpecResolver? = null
     private var streamPrefetchJob: kotlinx.coroutines.Job? = null
+    private var playbackMonitorJob: kotlinx.coroutines.Job? = null
     private var audioNormalizationController: AudioNormalizationController? = null
     private var audioCrossfadeCoordinator: AudioCrossfadeCoordinator? = null
     private var preloadNetworkManager: ConnectivityManager? = null
@@ -113,6 +114,7 @@ class PlaybackService : MediaLibraryService() {
     private var lastEndedMediaId: String? = null
     private var suppressNativeModePersistence = false
     private var automaticPrefetchInFlight = false
+    private var pendingAutomaticNextMediaId: String? = null
 
     // Segnali del profilo raccolti nel servizio: telefono, lock screen, Bluetooth
     // e Android Auto passano tutti da qui, quindi non dipendiamo dalla UI aperta.
@@ -239,8 +241,23 @@ class PlaybackService : MediaLibraryService() {
         }
     }
 
+    /** The service (not the UI) reports real Media3 playback for screen-off/Auto. */
+    private fun publishMonitorState() {
+        if (!::playbackSessionStore.isInitialized) return
+        val currentPlayer = player ?: return
+        val queue = playbackSessionStore.restore()?.queueState
+        val snapshot = PlaybackMonitorReporter.snapshot(
+            currentPlayer, queue, AutomaticPlaylistManager.source.value,
+        ) ?: return
+        playbackMonitorJob?.cancel()
+        playbackMonitorJob = serviceScope.launch {
+            PlaybackMonitorReporter.publish(snapshot)
+        }
+    }
+
     private val playerListener = object : Player.Listener {
         override fun onPlaybackStateChanged(playbackState: Int) {
+            publishMonitorState()
             val currentPlayer = player ?: return
 
             if (playbackState != Player.STATE_ENDED) {
@@ -260,6 +277,7 @@ class PlaybackService : MediaLibraryService() {
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
+            publishMonitorState()
             if (isPlaying) {
                 recordHistoryForCurrentIfNeeded()
                 ensureProfileTrackingStarted()
@@ -326,6 +344,7 @@ class PlaybackService : MediaLibraryService() {
                 YouTubeLikesManager.refreshId(song.id)
             }
             refreshMediaButtonPreferences()
+            publishMonitorState()
         }
 
         override fun onAudioSessionIdChanged(audioSessionId: Int) {
@@ -1441,6 +1460,7 @@ class PlaybackService : MediaLibraryService() {
         serviceScope.launch {
             while (true) {
                 kotlinx.coroutines.delay(30_000)
+                publishMonitorState()
                 val queue=playbackSessionStore.restore()?.queueState ?: continue
                 val current=player?.currentMediaItem?.mediaId ?: continue
                 if (queue.currentSong?.id==current && AutomaticPlaylistManager.hasServerIntent()) {
@@ -2686,6 +2706,8 @@ class PlaybackService : MediaLibraryService() {
     private fun preResolveUpcomingAudio(currentMediaId: String) {
         streamPrefetchJob?.cancel()
         streamPrefetchJob = null
+        playbackMonitorJob?.cancel()
+        playbackMonitorJob = null
         if (!AudioSettings.prefetchSourcesEnabled.value) return
         val resolver = deferredPlaybackResolver ?: return
         val restored = playbackSessionStore.restore()?.queueState ?: return
@@ -2760,6 +2782,31 @@ class PlaybackService : MediaLibraryService() {
                     )
                 }
             automaticPrefetchInFlight = false
+            // A media controller may request NEXT while a prefetch is running.
+            val pendingId = pendingAutomaticNextMediaId
+            pendingAutomaticNextMediaId = null
+            if (pendingId != null) {
+                val pendingQueue = playbackSessionStore.restore()
+                if (pendingQueue?.queueState?.currentSong?.id == pendingId &&
+                    player?.currentMediaItem?.mediaId == pendingId
+                ) {
+                    val target = pendingQueue.queueState.currentIndex + 1
+                    if (target in pendingQueue.queueState.songs.indices) {
+                        loadPersistedIndex(
+                            restored = pendingQueue,
+                            targetIndex = target,
+                            reason = "EXTERNAL_AUTO_NEXT_PREFETCH",
+                            expectedCurrentMediaId = pendingId,
+                        )
+                    } else {
+                        val currentNotice = AutomaticPlaylistManager.notice.value
+                        if (currentNotice == null || currentNotice.startsWith("Cerco ")) {
+                            AutomaticPlaylistManager.notice.value =
+                                "Nessun altro brano verificato disponibile. Riprova più tardi."
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -2799,7 +2846,11 @@ class PlaybackService : MediaLibraryService() {
         endedMediaId: String,
         restored: RestoredPlaybackSession,
     ) {
-        if (automaticPrefetchInFlight) return
+        if (automaticPrefetchInFlight) {
+            pendingAutomaticNextMediaId = endedMediaId
+            Log.d("LYRA_AUTO_PLAYLIST", "refillQueuedWhilePrefetching mediaId=$endedMediaId")
+            return
+        }
         automaticPrefetchInFlight = true
         serviceScope.launch {
             val updated = runCatching {
@@ -2813,6 +2864,7 @@ class PlaybackService : MediaLibraryService() {
             }.getOrNull() ?: restored
 
             automaticPrefetchInFlight = false
+            pendingAutomaticNextMediaId = null
             val queue = updated.queueState
             if (queue.currentSong?.id != endedMediaId) return@launch
             val target = queue.currentIndex + 1
@@ -2972,7 +3024,10 @@ class PlaybackService : MediaLibraryService() {
         // traccia: requestExternalNavigation gestisce la coda dei comandi.
         if (!queue.hasQueue) return false
 
-        return if (direction > 0) queue.hasNext else queue.hasPrevious
+        return if (direction > 0) {
+            queue.hasNext || (AutomaticPlaylistManager.isActive() &&
+                AutomaticPlaylistManager.currentTitle() == queue.title)
+        } else queue.hasPrevious
     }
 
     private fun requestExternalNavigation(
@@ -3007,7 +3062,21 @@ class PlaybackService : MediaLibraryService() {
             when {
                 queue.currentIndex < queue.songs.lastIndex -> queue.currentIndex + 1
                 queue.repeatMode == PlaybackRepeatMode.ALL && queue.songs.size > 1 -> 0
-                else -> return
+                else -> {
+                    if (AutomaticPlaylistManager.isActive() &&
+                        AutomaticPlaylistManager.currentTitle() == queue.title
+                    ) {
+                        val currentId = queue.currentSong?.id ?: return
+                        AutomaticPlaylistManager.notice.value =
+                            "Cerco altri brani del genere richiesto..."
+                        Log.d(
+                            "LYRA_AUTO_PLAYLIST",
+                            "externalNextRefill origin=$origin mediaId=$currentId",
+                        )
+                        extendAutomaticQueueAndAdvance(currentId, restored)
+                    }
+                    return
+                }
             }
         } else {
             when {

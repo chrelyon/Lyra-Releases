@@ -113,6 +113,7 @@ fun SettingsScreen(
     val restoreLastSession by PlaybackResumeSettings.restoreLastSession.collectAsStateWithLifecycle()
     val discoveryRegion by DiscoverySettings.regionMode.collectAsStateWithLifecycle()
     val personalizationEnabled by PersonalizationSettings.enabled.collectAsStateWithLifecycle()
+    val serverAlgorithmEnabled by PersonalizationSettings.useServerAlgorithm.collectAsStateWithLifecycle()
     val discoveryLevel by PersonalizationSettings.discoveryLevel.collectAsStateWithLifecycle()
     val useHistory by PersonalizationSettings.useHistory.collectAsStateWithLifecycle()
     val useLikes by PersonalizationSettings.useLikes.collectAsStateWithLifecycle()
@@ -352,6 +353,19 @@ fun SettingsScreen(
                         onCheckedChange = PersonalizationSettings::setEnabled,
                     )
                 }
+
+                SettingToggleRow(
+                    title = "Algoritmo playlist del server",
+                    subtitle = if (serverAlgorithmEnabled) {
+                        "Attivo: il server propone e verifica i brani delle nuove playlist automatiche. " +
+                            "Se non è raggiungibile, Lyra segnala l'uso del motore locale."
+                    } else {
+                        "Disattivo: le playlist automatiche vengono costruite dallo smartphone. " +
+                            "Cronologia, preferiti e apprendimento locale rimangono disponibili."
+                    },
+                    checked = serverAlgorithmEnabled,
+                    onCheckedChange = PersonalizationSettings::setUseServerAlgorithm,
+                )
 
                 if (personalizationEnabled) {
                     Text(

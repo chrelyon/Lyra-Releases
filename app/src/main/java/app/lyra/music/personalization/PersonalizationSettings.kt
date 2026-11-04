@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.asStateFlow
 object PersonalizationSettings {
     private const val PREFS_NAME = "lyra_personalization_settings"
     private const val KEY_ENABLED = "enabled"
+    private const val KEY_SERVER_ALGORITHM = "use_server_algorithm_v1"
     private const val KEY_DISCOVERY_LEVEL = "discovery_level"
     private const val KEY_USE_HISTORY = "use_history"
     private const val KEY_USE_LIKES = "use_likes"
@@ -23,6 +24,10 @@ object PersonalizationSettings {
     }
 
     private lateinit var appContext: Context
+
+    /** Server-vs-local playlist engine, completely independent of personalized learning. */
+    private val _useServerAlgorithm = MutableStateFlow(true)
+    val useServerAlgorithm: StateFlow<Boolean> = _useServerAlgorithm.asStateFlow()
 
     private val _enabled = MutableStateFlow(true)
     val enabled: StateFlow<Boolean> = _enabled.asStateFlow()
@@ -49,6 +54,7 @@ object PersonalizationSettings {
         appContext = context.applicationContext
         val prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         _enabled.value = prefs.getBoolean(KEY_ENABLED, true)
+        _useServerAlgorithm.value = prefs.getBoolean(KEY_SERVER_ALGORITHM, true)
         _discoveryLevel.value = runCatching {
             DiscoveryLevel.valueOf(
                 prefs.getString(KEY_DISCOVERY_LEVEL, DiscoveryLevel.BALANCED.name)
@@ -63,6 +69,7 @@ object PersonalizationSettings {
     }
 
     fun setEnabled(value: Boolean) = update(KEY_ENABLED, value) { _enabled.value = value }
+    fun setUseServerAlgorithm(value: Boolean) = update(KEY_SERVER_ALGORITHM, value) { _useServerAlgorithm.value = value }
     fun setUseHistory(value: Boolean) = update(KEY_USE_HISTORY, value) { _useHistory.value = value }
     fun setUseLikes(value: Boolean) = update(KEY_USE_LIKES, value) { _useLikes.value = value }
     fun setLearnFromSkips(value: Boolean) = update(KEY_LEARN_SKIPS, value) { _learnFromSkips.value = value }

@@ -1,6 +1,7 @@
 package app.lyra.music.genre
 
 import app.lyra.music.core.model.Song
+import app.lyra.music.diagnostics.LyraLog as Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -16,11 +17,18 @@ import java.net.URL
  * request into a broad electronic playlist on network/provider errors.
  */
 object VerifiedGenrePlaylistClient {
-    private val strictGenres = setOf("techno", "house", "dance", "rock")
+    private val genrePresets = setOf(
+        "pop", "rock", "rap", "dance", "house", "techno", "edm",
+        "indie", "rnb", "metal", "jazz", "classica",
+    )
+    private val moodPresets = setOf("relax", "energia", "party", "focus", "romantica")
     private val videoId = Regex("^[A-Za-z0-9_-]{11}$")
     private val imageHosts = setOf("i.ytimg.com", "lh3.googleusercontent.com")
 
-    fun supported(preset: String?): Boolean = preset != null && preset in strictGenres
+    fun supported(preset: String?): Boolean =
+        preset != null && (preset in genrePresets || preset in moodPresets)
+
+    fun isMood(preset: String?): Boolean = preset != null && preset in moodPresets
     fun enabled(preset: String?): Boolean =
         supported(preset) && GenreClassifierSettings.isConfigured()
 
@@ -29,7 +37,7 @@ object VerifiedGenrePlaylistClient {
         excludeIds: Collection<String> = emptyList(),
         limit: Int = 40,
     ): List<Song> = withContext(Dispatchers.IO) {
-        require(supported(preset)) { "Genere non supportato per la playlist verificata" }
+        require(supported(preset)) { "Preset non supportato per la playlist verificata" }
         require(limit in 1..50) { "Limite brani non valido" }
         val token = GenreClassifierSettings.token()
             ?: throw IllegalStateException("Token Lyra non configurato")
@@ -65,7 +73,27 @@ object VerifiedGenrePlaylistClient {
                         it.readText().take(90_001)
                     }
                     if (body.length > 90_000) throw IllegalStateException("Risposta server eccessiva")
-                    parseVerifiedTracks(body, preset).ifEmpty {
+                    val parsed = parseVerifiedTracks(body, preset)
+                    val response = JSONObject(body)
+                    val rows = response.optJSONArray("tracks") ?: JSONArray()
+                    val evidence = (0 until minOf(rows.length(), 8)).mapNotNull { index ->
+                        val item = rows.optJSONObject(index) ?: return@mapNotNull null
+                        val id = item.optString("id").takeIf(videoId::matches)
+                            ?: return@mapNotNull null
+                        val source = item.optString("genreSource").take(48)
+                        val reason = item.optString("genreReason").take(64)
+                        "$id:$source:$reason"
+                    }.joinToString(";")
+                    Log.d(
+                        "LYRA_AUTO_PLAYLIST",
+                        "verifiedResponse genre=$preset requested=$limit " +
+                            "serverSelected=${response.optInt("selected_count", rows.length())} " +
+                            "serverVerified=${response.optInt("verified_count", -1)} " +
+                            "parsed=${parsed.size} externalStatus=${response.optString("external_status", "none")} " +
+                            "externalDiscovery=${response.optBoolean("external_discovery", false)} " +
+                            "evidence=$evidence",
+                    )
+                    parsed.ifEmpty {
                         throw IllegalStateException(
                             "Nessun brano $preset verificato: Lyra non inserisce generi casuali"
                         )

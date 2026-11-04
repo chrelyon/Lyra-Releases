@@ -1,8 +1,8 @@
-name: Android 1.0.8 verified playlists (unsigned checks)
+name: Lyra Android 1.0.9 (unsigned CI)
 on:
   push:
     branches:
-      - release/1.0.8-verified-playlists-rc
+      - release/1.0.9-android-auto-mode-and-monitor
       - main
   pull_request:
     branches:
@@ -12,25 +12,23 @@ on:
 permissions:
   contents: read
 
-# A push and its pull request often trigger identical builds. Only the latest
-# release-candidate check needs to consume an Android SDK runner.
 concurrency:
-  group: lyra-android-verified-1.0.8-${{ github.ref }}
+  group: lyra-android-ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 45
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
-      - name: Java 21
+      - name: JDK 21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '21'
-      - name: Install Android API 37 on runner SDK
+      - name: Install Android API 37
         shell: bash
         run: |
           echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> "$GITHUB_ENV"
@@ -38,22 +36,23 @@ jobs:
           test -x "$SDKMANAGER"
           yes | "$SDKMANAGER" --licenses >/dev/null || true
           "$SDKMANAGER" --channel=3 --install "platforms;android-37.0" "build-tools;37.0.0" "platform-tools"
-      - name: Set up Gradle
+      - name: Configure Gradle
         uses: gradle/actions/setup-gradle@v4
-      - name: Unit tests and debug APK
+      - name: Unit tests and debug build
         run: |
           chmod +x gradlew
           ./gradlew --no-daemon :app:testDebugUnitTest :innertube:testDebugUnitTest :app:assembleDebug
-      - name: Ensure version and unsigned APK
+      - name: Validate release version and unsigned debug APK
         shell: bash
         run: |
-          grep -q 'versionCode = 46' app/build.gradle.kts
-          grep -q 'versionName = "1.0.8"' app/build.gradle.kts
+          grep -q 'versionCode = 47' app/build.gradle.kts
+          grep -q 'versionName = "1.0.9"' app/build.gradle.kts
           test -s app/build/outputs/apk/debug/app-debug.apk
-      - name: Archive unsigned debug APK for testing
-        if: success()
+          test ! -e keystore.properties
+          test ! -e release-signing.sha256
+      - name: Upload unsigned debug candidate
         uses: actions/upload-artifact@v4
         with:
-          name: lyra-1.0.8-unsigned-debug
+          name: lyra-1.0.9-unsigned-debug
           path: app/build/outputs/apk/debug/app-debug.apk
           retention-days: 3

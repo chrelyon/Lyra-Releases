@@ -27,6 +27,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -35,12 +36,15 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import app.lyra.music.playback.AutomaticPlaylistManager
+import app.lyra.music.genre.LyraServerMonitor
 import app.lyra.music.playback.PlaybackQueueUiState
 import app.lyra.music.playback.PlaybackRepeatMode
 import app.lyra.music.playback.PlaybackUiState
@@ -71,6 +75,20 @@ fun NowPlayingScreen(
 
     var isSeeking by remember { mutableStateOf(false) }
     var seekFraction by remember { mutableFloatStateOf(0f) }
+    val automaticSource by AutomaticPlaylistManager.source.collectAsStateWithLifecycle()
+    val automaticNotice by AutomaticPlaylistManager.notice.collectAsStateWithLifecycle()
+    val serverStatus by LyraServerMonitor.status.collectAsStateWithLifecycle()
+    val isAutomaticQueue = AutomaticPlaylistManager.isActive() &&
+        AutomaticPlaylistManager.currentTitle() == queueState.title
+    val playerWarning = if (!isAutomaticQueue) null else when {
+        automaticNotice != null -> automaticNotice
+        serverStatus == LyraServerMonitor.Status.OFFLINE &&
+            automaticSource.startsWith("Server") ->
+            "Server Lyra non raggiungibile: la playlist automatica potrebbe esaurirsi."
+        queueState.songs.size == 1 ->
+            "Playlist incompleta: un solo brano disponibile. Premi Next per cercarne altri."
+        else -> null
+    }
 
     val durationMs = state.durationMs.coerceAtLeast(0L)
     val actualFraction = if (durationMs > 0L) {
@@ -155,6 +173,22 @@ fun NowPlayingScreen(
                     .fillMaxWidth()
                     .padding(top = 6.dp),
             )
+        }
+
+        if (playerWarning != null) {
+            Surface(
+                color = MaterialTheme.colorScheme.errorContainer,
+                shape = MaterialTheme.shapes.medium,
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+            ) {
+                Text(
+                    text = playerWarning,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(10.dp),
+                )
+            }
         }
 
         queueState.currentSong?.takeIf { !it.isLocal }?.let { song ->
@@ -312,7 +346,7 @@ fun NowPlayingScreen(
 
             IconButton(
                 onClick = onNext,
-                enabled = queueState.hasNext && !queueState.isChangingTrack,
+                enabled = (queueState.hasNext || isAutomaticQueue) && !queueState.isChangingTrack,
                 modifier = Modifier.size(56.dp),
             ) {
                 Icon(
