@@ -82,6 +82,7 @@ class PlaybackService : MediaLibraryService() {
     private var player: ExoPlayer? = null
     private var deferredPlaybackResolver: LyraPlaybackDataSpecResolver? = null
     private var streamPrefetchJob: kotlinx.coroutines.Job? = null
+    private var playbackMonitorJob: kotlinx.coroutines.Job? = null
     private var audioNormalizationController: AudioNormalizationController? = null
     private var audioCrossfadeCoordinator: AudioCrossfadeCoordinator? = null
     private var preloadNetworkManager: ConnectivityManager? = null
@@ -240,8 +241,23 @@ class PlaybackService : MediaLibraryService() {
         }
     }
 
+    /** The service (not the UI) reports real Media3 playback for screen-off/Auto. */
+    private fun publishMonitorState() {
+        if (!::playbackSessionStore.isInitialized) return
+        val currentPlayer = player ?: return
+        val queue = playbackSessionStore.restore()?.queueState
+        val snapshot = PlaybackMonitorReporter.snapshot(
+            currentPlayer, queue, AutomaticPlaylistManager.source.value,
+        ) ?: return
+        playbackMonitorJob?.cancel()
+        playbackMonitorJob = serviceScope.launch {
+            PlaybackMonitorReporter.publish(snapshot)
+        }
+    }
+
     private val playerListener = object : Player.Listener {
         override fun onPlaybackStateChanged(playbackState: Int) {
+            publishMonitorState()
             val currentPlayer = player ?: return
 
             if (playbackState != Player.STATE_ENDED) {
@@ -261,6 +277,7 @@ class PlaybackService : MediaLibraryService() {
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
+            publishMonitorState()
             if (isPlaying) {
                 recordHistoryForCurrentIfNeeded()
                 ensureProfileTrackingStarted()
@@ -327,6 +344,7 @@ class PlaybackService : MediaLibraryService() {
                 YouTubeLikesManager.refreshId(song.id)
             }
             refreshMediaButtonPreferences()
+            publishMonitorState()
         }
 
         override fun onAudioSessionIdChanged(audioSessionId: Int) {
@@ -1442,6 +1460,7 @@ class PlaybackService : MediaLibraryService() {
         serviceScope.launch {
             while (true) {
                 kotlinx.coroutines.delay(30_000)
+                publishMonitorState()
                 val queue=playbackSessionStore.restore()?.queueState ?: continue
                 val current=player?.currentMediaItem?.mediaId ?: continue
                 if (queue.currentSong?.id==current && AutomaticPlaylistManager.hasServerIntent()) {
@@ -2687,6 +2706,8 @@ class PlaybackService : MediaLibraryService() {
     private fun preResolveUpcomingAudio(currentMediaId: String) {
         streamPrefetchJob?.cancel()
         streamPrefetchJob = null
+        playbackMonitorJob?.cancel()
+        playbackMonitorJob = null
         if (!AudioSettings.prefetchSourcesEnabled.value) return
         val resolver = deferredPlaybackResolver ?: return
         val restored = playbackSessionStore.restore()?.queueState ?: return
