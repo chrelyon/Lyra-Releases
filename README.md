@@ -24,13 +24,16 @@ e `release-signing.sha256`, che restano **esclusivamente sul PC**.
 .\tools\prepara-release-1.0.9.ps1 -Firma
 
 # Solo DOPO il test installato sul telefono: crea v1.0.9 con APK e update.json.
-.\tools\prepara-release-1.0.9.ps1 -Firma -Pubblica -ConfermaTest
+.\tools\prepara-release-1.0.9.ps1 -Pubblica -ConfermaTest
 ```
 
 L'ultimo comando richiede **GitHub CLI** `gh` già autenticato
 (`gh auth login`) e un `main` locale identico a `origin/main`.
-La pubblicazione si ferma se il tag `v1.0.9` esiste già, se la firma non
-corrisponde a quella precedente o se `update.json` non corrisponde all'APK.
+La pubblicazione **non ricompila**: carica esattamente la APK firmata e
+collaudata con `-Firma`, confrontando SHA-256, certificato e commit del
+repository (salvati localmente in `dist/release-source-1.0.9.json`). Si ferma
+se il tag `v1.0.9` esiste già, se la firma non corrisponde a quella precedente
+o se `update.json` non corrisponde all'APK.
 Prima della pubblicazione, il ramo dev'essere integrato in `main` e la CI
 verde. Il backend 0.3.25 deve essere installato sul server per vedere gli
 stati dei lettori. I client precedenti non inviano heartbeat.
