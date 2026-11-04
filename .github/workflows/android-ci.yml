@@ -1,0 +1,72 @@
+name: Android CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  debug-build-and-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Android SDK
+        shell: bash
+        run: |
+          echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> "$GITHUB_ENV"
+          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" --channel=3 --install "platforms;android-37.0" "build-tools;37.0.0" "platform-tools"
+      - name: Check PowerShell scripts
+        shell: pwsh
+        run: |
+          foreach ($path in @('tools/build-debug.ps1','tools/build-release.ps1')) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              $path, [ref]$tokens, [ref]$errors
+            ) | Out-Null
+            if ($errors) {
+              $errors | ForEach-Object { Write-Error "${path}: $($_.Message)" }
+              exit 1
+            }
+          }
+      - name: Ensure signing secrets are not tracked
+        shell: bash
+        run: |
+          if git ls-files | grep -Ei '(^|/)(keystore\.properties|signing\.properties|key\.properties|release-signing\.sha256)$|\.(jks|keystore|p12|pfx)$'; then
+            echo "Signing file tracked by Git: aborting." >&2
+            exit 1
+          fi
+      - name: Gradle cache
+        uses: gradle/actions/setup-gradle@v4
+      - name: Test and assemble debug APK
+        shell: bash
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon :app:testDebugUnitTest :innertube:testDebugUnitTest :app:assembleDebug
+      - name: Check APK exists
+        run: test -s app/build/outputs/apk/debug/app-debug.apk
+      - name: Attach debug APK for testing only
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-debug
+          path: app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 3

@@ -1,4 +1,0 @@
-#!/usr/bin/env bash
-set -euo pipefail
-adb logcat -c
-adb logcat -v time 'LYRA_PLAYER:D' 'LYRA_STREAM:D' 'LYRA_QUEUE:D' 'LYRA_LIBRARY:D' 'LYRA_AUTH:D' 'LYRA_RESTORE:D' 'LYRA_EXTERNAL:D' 'LYRA_AUTO:D' 'AndroidRuntime:E' '*:S'

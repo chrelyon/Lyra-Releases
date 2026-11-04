@@ -6,7 +6,12 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
-val keystorePropertiesFile = rootProject.file("keystore.properties")
+// Optional local-only signing configuration passed as a Gradle property.
+// Absolute external paths are supported; never commit passwords or keys.
+val signingPropertiesOverride = providers.gradleProperty("lyraSigningPropertiesFile")
+    .orNull?.trim()?.takeIf { it.isNotEmpty() }
+val keystorePropertiesFile = signingPropertiesOverride?.let { rootProject.file(it) }
+    ?: rootProject.file("keystore.properties")
 
 // InnerTubeX e' una dipendenza interna del modulo :innertube. La versione viene
 // letta dal build.gradle.kts del modulo e resa disponibile a BuildConfig, cosi'
@@ -27,7 +32,7 @@ val keystoreProperties = Properties().apply {
         keystorePropertiesFile.inputStream().use { load(it) }
     } else if (releaseBuildRequested && !unsignedRelease) {
         error(
-            "Missing keystore.properties in the project root. " +
+            "Missing signing properties file (pass -PlyraSigningPropertiesFile=PATH or create keystore.properties in project root). " +
                 "Create it before building a signed Lyra release."
         )
     }
