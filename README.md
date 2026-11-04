@@ -1,6 +1,6 @@
 # Lyra Android 1.0.9 — preparazione release
 
-Lyra è un'applicazione **Android/Kotlin con Jetpack Compose**. Usa **Media3/ExoPlayer** per la riproduzione e **InnerTubeX/YouTube Music** per ricerca e risoluzione degli stream. Il server Python/FastAPI su Ubuntu contiene catalogo, profilo, metadati e classificazioni: **non distribuisce l'audio**.
+Lyra è un'applicazione **Android/Kotlin con Jetpack Compose**. Usa **Media3/ExoPlayer** per la riproduzione e **InnerTubeX/YouTube Music** per ricerca e risoluzione degli stream. Il server contiene catalogo, profilo, metadati e classificazioni: **non distribuisce l'audio**.
 
 | Cartella | Compito |
 | --- | --- |
