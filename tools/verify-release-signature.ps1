@@ -104,13 +104,18 @@ else {
     $dist =
         Join-Path $ProjectRoot "dist"
 
+    $gradleText = Get-Content -LiteralPath (Join-Path $ProjectRoot "app\build.gradle.kts") -Raw
+    $matchVersion = [regex]::Match($gradleText, 'versionName\s*=\s*"([^"]+)"')
+    if (-not $matchVersion.Success) { throw "Versione Lyra non identificata." }
+    $CurrentVersion = $matchVersion.Groups[1].Value
+
     $previous =
         Get-ChildItem `
             $dist `
             -Filter "Lyra-*.apk" `
             -File `
             -ErrorAction SilentlyContinue |
-        Where-Object { $_.Name -ne "Lyra-1.0.8.apk" } |
+        Where-Object { $_.Name -ne "Lyra-$($CurrentVersion).apk" } |
         Sort-Object LastWriteTime -Descending |
         Select-Object -First 1
 
