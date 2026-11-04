@@ -36,6 +36,19 @@ jobs:
           test -x "$SDKMANAGER"
           yes | "$SDKMANAGER" --licenses >/dev/null || true
           "$SDKMANAGER" --channel=3 --install "platforms;android-37.0" "build-tools;37.0.0" "platform-tools"
+      - name: Validate Windows release PowerShell syntax
+        shell: pwsh
+        run: |
+          $sourceFiles = @('tools/prepara-release-1.0.9.ps1', 'tools/build-release.ps1', 'tools/verify-release-signature.ps1')
+          foreach ($sourceFile in $sourceFiles) {
+            $tokens = $null
+            $parseErrors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($sourceFile, [ref]$tokens, [ref]$parseErrors) | Out-Null
+            if ($parseErrors) {
+              $parseErrors | ForEach-Object { Write-Host "$sourceFile : $($_.Message)" }
+              exit 1
+            }
+          }
       - name: Configure Gradle
         uses: gradle/actions/setup-gradle@v4
       - name: Unit tests and debug build
