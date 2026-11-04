@@ -80,6 +80,7 @@ import kotlinx.coroutines.launch
 fun SettingsScreen(
     onBack: () -> Unit,
     onOpenListeningAnalytics: () -> Unit,
+    onSwitchGoogleAccount: () -> Unit = {},
     availableUpdate: GitHubUpdateChecker.UpdateInfo? = null,
     focusUpdates: Boolean = false,
     onFocusUpdatesHandled: () -> Unit = {},
@@ -1113,6 +1114,19 @@ fun SettingsScreen(
                 }
 
                 if (authorizationState.isAuthorized) {
+                    OutlinedButton(
+                        onClick = onSwitchGoogleAccount,
+                        enabled = !authorizationState.isChecking && !authorizationState.isAuthorizing,
+                        modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+                    ) {
+                        Text("Cambia account Google")
+                    }
+                    Text(
+                        "Scegli un altro account Google per leggere le sue playlist e i suoi brani piaciuti. Le playlist YouTube del precedente account vengono separate.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 6.dp),
+                    )
                     OutlinedButton(
                         onClick = { showLogoutConfirmation = true },
                         enabled = !authorizationState.isChecking,
