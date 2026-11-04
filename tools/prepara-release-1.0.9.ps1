@@ -8,7 +8,7 @@
 .EXAMPLE
   .\tools\prepara-release-1.0.9.ps1 -Allinea
   .\tools\prepara-release-1.0.9.ps1 -Firma
-  .\tools\prepara-release-1.0.9.ps1 -Firma -Pubblica -ConfermaTest
+  .\tools\prepara-release-1.0.9.ps1 -Pubblica -ConfermaTest
 #>
 param(
     [switch]$Allinea,
@@ -41,12 +41,19 @@ function Require-Clean() {
         throw 'Sorgenti locali modificati. Salvali/committali prima di sincronizzare o pubblicare; nessun reset automatico.'
     }
 }
-if ($Pubblica -and -not $Firma) { throw 'Pubblicazione richiesta: aggiungi -Firma.' }
+if ($Pubblica -and $Firma) {
+    throw 'Non ricompilare durante la pubblicazione: usa solo -Pubblica -ConfermaTest.'
+}
+if ($Pubblica -and $Allinea) {
+    throw 'Allinea e pubblica in comandi separati per proteggere la APK gia collaudata.'
+}
 if ($Pubblica -and -not $ConfermaTest) {
     throw 'Pubblicazione richiesta: prova prima sul telefono e ripeti con -ConfermaTest.'
 }
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) { throw 'Git non installato.' }
-if (-not (Get-Command java -ErrorAction SilentlyContinue)) { throw 'Serve JDK 21 nel PATH.' }
+if (-not $Pubblica -and -not (Get-Command java -ErrorAction SilentlyContinue)) {
+    throw 'Serve JDK 21 nel PATH.'
+}
 
 Push-Location $root
 try {
@@ -75,8 +82,8 @@ try {
     if ((& git ls-files -- keystore.properties local.properties release-signing.sha256)) {
         throw 'File sensibili tracciati da Git: operazione bloccata.'
     }
-    if ($Pubblica) {
-        if ($branch -ne 'main') { throw 'Per pubblicare serve main aggiornato.' }
+    if ($Firma -or $Pubblica) {
+        if ($branch -ne 'main') { throw 'Firma e pubblicazione richiedono main aggiornato.' }
         Require-Clean
         Run 'Controllo main remoto' { git fetch origin main }
         $head = (& git rev-parse HEAD).Trim()
@@ -89,19 +96,21 @@ try {
         if ($tagExists) { throw 'Tag v1.0.9 gia esistente: non sovrascrivo una Release.' }
     }
 
-    Write-Host '[Lyra] Esecuzione test unitari e compilazione debug...' -ForegroundColor Cyan
-    Run 'Test e build debug' {
-        .\gradlew.bat :app:testDebugUnitTest :innertube:testDebugUnitTest :app:assembleDebug
+    if (-not $Pubblica) {
+        Write-Host '[Lyra] Esecuzione test unitari e compilazione debug...' -ForegroundColor Cyan
+        Run 'Test e build debug' {
+            .\gradlew.bat :app:testDebugUnitTest :innertube:testDebugUnitTest :app:assembleDebug
+        }
+        $debug = Join-Path $root 'app\build\outputs\apk\debug\app-debug.apk'
+        if (-not (Test-Path $debug)) { throw 'APK debug non generata.' }
+        Write-Host '[Lyra] Test e build debug superati.' -ForegroundColor Green
     }
-    $debug = Join-Path $root 'app\build\outputs\apk\debug\app-debug.apk'
-    if (-not (Test-Path $debug)) { throw 'APK debug non generata.' }
-    Write-Host '[Lyra] Test e build debug superati.' -ForegroundColor Green
 
-    if (-not $Firma) {
+    if (-not $Firma -and -not $Pubblica) {
         Write-Host '[Lyra] Per compilare con la tua firma, ripeti con -Firma.'
         return
     }
-    if (-not (Test-Path 'keystore.properties')) {
+    if ($Firma -and -not (Test-Path 'keystore.properties')) {
         throw 'keystore.properties mancante. Usa la chiave ESISTENTE, non crearne una nuova.'
     }
     $trusted = Test-Path 'release-signing.sha256'
@@ -110,7 +119,14 @@ try {
         throw 'Serve il fingerprint release-signing.sha256 oppure dist\Lyra-1.0.8.apk firmata con la vecchia chiave.'
     }
 
-    Run 'Compilazione, firma e verifica certificato' { & '.\tools\build-release.ps1' }
+    if ($Firma) {
+        $existingManifest = Join-Path $root 'dist\update.json'
+        if (Test-Path $existingManifest) {
+            $stamp=Get-Date -Format 'yyyyMMdd-HHmmss'
+            Copy-Item -LiteralPath $existingManifest -Destination (Join-Path $root "dist\update-before-1.0.9-$stamp.json")
+        }
+        Run 'Compilazione, firma e verifica certificato' { & '.\tools\build-release.ps1' }
+    }
     $apk = Join-Path $root 'dist\Lyra-1.0.9.apk'
     $manifest = Join-Path $root 'dist\update.json'
     if (-not (Test-Path $apk) -or -not (Test-Path $manifest)) {
@@ -122,13 +138,37 @@ try {
         $meta.apkName -ne 'Lyra-1.0.9.apk' -or $meta.sha256 -ne $digest) {
         throw 'Manifest update.json non corrisponde ai byte della APK firmata.'
     }
-    Write-Host "[Lyra] Firma e manifest coerenti: $digest" -ForegroundColor Green
-
-    if (-not $Pubblica) {
-        Write-Host '[Lyra] Release locale pronta. Collaudala sul telefono prima di pubblicarla.'
-        Write-Host '[Lyra] Per pubblicare: -Firma -Pubblica -ConfermaTest.'
+    $fingerprint = & (Join-Path $PSScriptRoot 'verify-release-signature.ps1') `
+        -ApkPath $apk -ProjectRoot $root
+    if ([string]::IsNullOrWhiteSpace($fingerprint) -or
+        $meta.signerSha256 -ne $fingerprint.Trim().ToLowerInvariant()) {
+        throw 'Certificato APK diverso dalla chiave release fidata o dal manifest.'
+    }
+    $sourceRecordPath = Join-Path $root 'dist\release-source-1.0.9.json'
+    $head = (& git rev-parse HEAD).Trim()
+    if ($Firma) {
+        $sourceRecord = [ordered]@{
+            commit = $head
+            sha256 = $digest
+            signerSha256 = $fingerprint.Trim().ToLowerInvariant()
+            versionCode = 47
+        }
+        [IO.File]::WriteAllText($sourceRecordPath, ($sourceRecord | ConvertTo-Json),
+            [Text.UTF8Encoding]::new($false))
+        Write-Host '[Lyra] APK firmata, test e commit sorgenti registrati.' -ForegroundColor Green
+        Write-Host '[Lyra] Collauda questa ESATTA APK sul telefono, poi usa -Pubblica -ConfermaTest.'
         return
     }
+    if (-not (Test-Path $sourceRecordPath)) {
+        throw 'Manca la prova sorgente della APK firmata. Esegui prima -Firma.'
+    }
+    $sourceRecord = Get-Content -LiteralPath $sourceRecordPath -Raw | ConvertFrom-Json
+    if ($sourceRecord.commit -ne $head -or $sourceRecord.sha256 -ne $digest -or
+        $sourceRecord.versionCode -ne 47 -or
+        $sourceRecord.signerSha256 -ne $meta.signerSha256) {
+        throw 'APK non corrispondente ai sorgenti correnti o alla versione collaudata.'
+    }
+    Write-Host '[Lyra] Pubblicazione ESATTA APK firmata e collaudata, senza ricompilare.' -ForegroundColor Green
     if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
         throw 'GitHub CLI (gh) non installato: installa gh ed esegui gh auth login.'
     }
