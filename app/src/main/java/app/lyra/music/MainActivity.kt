@@ -307,6 +307,7 @@ class MainActivity : ComponentActivity() {
                             composable(SETTINGS_ROUTE) {
                                 SettingsScreen(
                                     onBack = { navController.popBackStack() },
+                                    onSwitchGoogleAccount = { requestYouTubeAuthorization(forceAccountSelection = true) },
                                     onOpenListeningAnalytics = {
                                         navController.navigate(ANALYTICS_ROUTE) { launchSingleTop = true }
                                     },
@@ -389,10 +390,10 @@ class MainActivity : ComponentActivity() {
         homeViewModel.onAppForegrounded()
     }
 
-    private fun requestYouTubeAuthorization() {
+    private fun requestYouTubeAuthorization(forceAccountSelection: Boolean = false) {
         YouTubeAuthorizationManager.authorize(
             activity = this,
-            forceAccountSelection = false,
+            forceAccountSelection = forceAccountSelection,
             onResolutionRequired = ::launchYouTubeAuthorization,
         )
     }
