@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.util.Base64
 import app.lyra.music.youtube.cache.YouTubeLibraryCache
+import app.lyra.music.youtube.likes.YouTubeLikesManager
 import java.security.MessageDigest
 import java.security.SecureRandom
 import app.lyra.music.diagnostics.LyraLog as Log
@@ -389,6 +390,7 @@ object YouTubeAuthorizationManager {
             authorizationGeneration = nextGeneration,
             errorMessage = null,
         )
+        YouTubeLikesManager.onAuthorizationChanged()
 
         // Non loggare mai token, e-mail, nome o identificatori account Google.
         Log.d(
@@ -474,6 +476,7 @@ object YouTubeAuthorizationManager {
             profilePictureUrl = null,
             errorMessage = errorMessage,
         )
+        YouTubeLikesManager.onAuthorizationChanged()
     }
 
     private fun friendlyError(error: Throwable): String {
