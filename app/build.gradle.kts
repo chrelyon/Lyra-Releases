@@ -48,6 +48,19 @@ fun releaseSigningProperty(name: String): String? {
     return null
 }
 
+fun deploymentProperty(name: String): String =
+    providers.gradleProperty(name).orNull?.trim()?.takeIf { it.isNotEmpty() }
+        ?: keystoreProperties.getProperty(name)?.trim().orEmpty()
+
+fun kotlinString(value: String): String = "\"" + value
+    .replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+
+val lyraServerUrl = deploymentProperty("serverUrl")
+val lyraSupportEmail = deploymentProperty("supportEmail")
+if (releaseBuildRequested && !unsignedRelease && lyraServerUrl.isBlank()) {
+    error("Missing 'serverUrl' in the external signing.properties file")
+}
+
 android {
     namespace = "app.lyra.music"
     compileSdk = 37
@@ -58,10 +71,12 @@ android {
         minSdk = 26
         targetSdk = 36
 
-        versionCode = 48
-        versionName = "1.0.10"
+        versionCode = 49
+        versionName = "1.0.11"
 
         buildConfigField("String", "INNERTUBEX_VERSION", "\"$innerTubeXVersion\"")
+        buildConfigField("String", "LYRA_SERVER_URL", kotlinString(lyraServerUrl))
+        buildConfigField("String", "LYRA_SUPPORT_EMAIL", kotlinString(lyraSupportEmail))
     }
 
     signingConfigs {

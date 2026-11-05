@@ -3691,7 +3691,7 @@ class PlaybackService : MediaLibraryService() {
 
     private companion object {
         const val POSITION_CHECKPOINT_MS = 2_000L
-        const val AUTOMATIC_PREFETCH_THRESHOLD = 4
+        const val AUTOMATIC_PREFETCH_THRESHOLD = 5
         const val AUTO_SEEK_VERIFY_DELAY_MS = 400L
         const val MAX_PENDING_NAVIGATION_COMMANDS = 3
         const val SESSION_ACTIVITY_REQUEST_CODE = 3008

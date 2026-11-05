@@ -5,3 +5,6 @@ storeFile=D:/AndroidSigning/release-key.jks
 storePassword=INSERISCI_PASSWORD_LOCALMENTE
 keyAlias=ALIAS_PRIVATO
 keyPassword=INSERISCI_PASSWORD_LOCALMENTE
+# Configurazione specifica dell'installazione; resta fuori dal repository.
+serverUrl=https://your-lyra-server.example:10000
+supportEmail=support@example.invalid

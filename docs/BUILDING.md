@@ -26,9 +26,11 @@ Per produrre una versione release firmata con la **propria** chiave:
 1. Crea una cartella privata, ad esempio `D:\AndroidSigning\`, **fuori
    dal repository pubblico**.
 2. Copia `signing.properties.example` in
-   `D:\AndroidSigning\signing.properties` e modifica i quattro campi:
+   `D:\AndroidSigning\signing.properties` e modifica i sei campi:
    `storeFile` (percorso completo del file `.jks`/`.keystore`),
-   `storePassword`, `keyAlias`, `keyPassword`.
+   `storePassword`, `keyAlias`, `keyPassword`, `serverUrl` e, se desiderata,
+   `supportEmail`. Questi ultimi due valori restano nella configurazione locale
+   e non vengono pubblicati nel repository.
 3. Per `storeFile` utilizza **slash avanti** anche su Windows, ad esempio
    `D:/AndroidSigning/release-key.jks`: in un file Java Properties le
    barre inverse vengono interpretate come escape.

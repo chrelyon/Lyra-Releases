@@ -1,5 +1,6 @@
 package app.lyra.music.genre
 
+import app.lyra.music.BuildConfig
 import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
@@ -19,7 +20,7 @@ object GenreClassifierSettings {
     private const val KEY_ENABLED = "enabled"
     private const val KEY_ENDPOINT = "endpoint" // legacy setting, ignored after migration
     private const val KEY_CONNECTION_ENABLED = "connection_enabled_v1"
-    const val SERVER_URL = "https://vivisochat-lab.tail056f21.ts.net:10000"
+    val SERVER_URL: String = BuildConfig.LYRA_SERVER_URL
     private const val KEY_ENCRYPTED_TOKEN = "encrypted_token"
     private const val KEY_ALIAS = "lyra_genre_api_key_v1"
 

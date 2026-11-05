@@ -6,7 +6,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class UbuntuOnlyCutoverPolicyTest {
-    private val ubuntu = "https://vivisochat-lab.tail056f21.ts.net:10000"
+    private val ubuntu = "https://lyra-test.tail00000.ts.net:10000"
     private val oldWorker = "https://lyra-profile-sync.example.workers.dev"
 
     @Test fun routesOnlyToAlreadyConfiguredFunnel() {
@@ -17,8 +17,8 @@ class UbuntuOnlyCutoverPolicyTest {
     }
 
     @Test fun rejectsInvalidDestinations() {
-        assertEquals("", UbuntuOnlyCutoverPolicy.endpoint("http://vivisochat-lab.tail056f21.ts.net:10000", ""))
-        assertEquals("", UbuntuOnlyCutoverPolicy.endpoint("https://vivisochat-lab.tail056f21.ts.net:8443", ""))
+        assertEquals("", UbuntuOnlyCutoverPolicy.endpoint("http://lyra-test.tail00000.ts.net:10000", ""))
+        assertEquals("", UbuntuOnlyCutoverPolicy.endpoint("https://lyra-test.tail00000.ts.net:8443", ""))
         assertEquals(ubuntu, UbuntuOnlyCutoverPolicy.endpoint("$ubuntu/", ""))
     }
 

@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import app.lyra.music.core.model.Song
 import app.lyra.music.audio.AudioSettings
 import app.lyra.music.personalization.PersonalizedMixEngine
+import app.lyra.music.personalization.PersonalizationSettings
 import app.lyra.music.youtube.repository.DiscoveryDirectMixRepository
 import app.lyra.music.youtube.likes.YouTubeLikesManager
 import kotlinx.coroutines.Dispatchers
@@ -249,6 +250,7 @@ class PlaybackViewModel(
     /** Avvia direttamente una selezione Lyra, senza schermate di playlist. */
     fun startDiscoveryMix(folderId: String, groupId: String) {
         if (_automaticPlaylistLoading.value) return
+        AutomaticPlaylistManager.source.value = "Locale · anno verificato nei metadati YTM"
         val generation = ++automaticGeneration
         _automaticPlaylistLoading.value = true
         _automaticPlaylistError.value = null
@@ -435,6 +437,29 @@ class PlaybackViewModel(
 
     /** Avvia uno dei mix locali della sezione Scopri -> Per te. */
     fun startPersonalizedMix(mixId: String) {
+        if (mixId == PersonalizedMixEngine.DAILY_ID && PersonalizationSettings.useServerAlgorithm.value) {
+            val generation = ++automaticGeneration
+            AutomaticPlaylistManager.clear()
+            _automaticPlaylistLoading.value = true
+            _automaticPlaylistError.value = null
+            viewModelScope.launch {
+                runCatching { AutomaticPlaylistManager.startPersonalizedMix() }
+                    .onSuccess { result ->
+                        if (generation == automaticGeneration) {
+                            playQueue(result.songs, 0, result.title, preserveAutomaticSession = true)
+                            _automaticPlaylistLoading.value = false
+                        }
+                    }
+                    .onFailure {
+                        if (generation == automaticGeneration) startLocalPersonalizedMix(mixId)
+                    }
+            }
+            return
+        }
+        startLocalPersonalizedMix(mixId)
+    }
+
+    private fun startLocalPersonalizedMix(mixId: String) {
         val automatic = PersonalizedMixEngine.automaticSeed(mixId)
         if (automatic != null) {
             val (seed, title) = automatic

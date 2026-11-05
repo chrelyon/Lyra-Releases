@@ -341,9 +341,9 @@ class MainActivity : ComponentActivity() {
                             title = { Text("Lyra si è arrestata in modo anomalo") },
                             text = {
                                 Text(
-                                    "È disponibile un report diagnostico. Puoi inviarlo a " +
-                                        DiagnosticsReporter.SUPPORT_EMAIL +
-                                        " per analizzare il problema."
+                                    if (DiagnosticsReporter.SUPPORT_EMAIL.isBlank())
+                                        "È disponibile un report diagnostico da condividere per analizzare il problema."
+                                    else "È disponibile un report diagnostico. Puoi inviarlo all'assistenza per analizzare il problema."
                                 )
                             },
                             confirmButton = {

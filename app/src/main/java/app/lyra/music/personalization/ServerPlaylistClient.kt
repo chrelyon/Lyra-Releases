@@ -110,7 +110,7 @@ class ServerPlaylistClient(val kind: String, val value: String, val title: Strin
         return try {
             ensureSession();flushFeedback()
             val pending=state!!.optJSONObject("next_request") ?: base().put("cursor",state!!.getInt("cursor"))
-                .put("limit",12).put("exclude_ids",JSONArray(exclude.filter(ID::matches).takeLast(100))).also {
+                .put("limit",20).put("exclude_ids",JSONArray(exclude.filter(ID::matches).takeLast(100))).also {
                     state!!.put("next_request",it);save()
                 }
             val reply=state!!.optJSONObject("next_reply") ?: request(path("next"),pending).also {
@@ -146,7 +146,7 @@ class ServerPlaylistClient(val kind: String, val value: String, val title: Strin
             // Retry exactly the same request if the response was lost.
             val pending=state!!.optJSONObject("prepare_request") ?: base().put("current_id",currentId)
                 .put("remaining_ids",JSONArray(queueIds.filter(ID::matches).takeLast(100)))
-                .put("protected_ids",JSONArray()).put("repeat_mode","off").put("queue_revision",revision).put("limit",12).also {
+                .put("protected_ids",JSONArray()).put("repeat_mode","off").put("queue_revision",revision).put("limit",20).also {
                     state!!.put("prepare_request",it);save()
                 }
             val reply=request(path("prepare"),pending)

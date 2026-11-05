@@ -217,7 +217,7 @@ fun SettingsScreen(
                     )
                     Text(
                         text = if (loggingEnabled) {
-                            "Attivi. In caso di crash Lyra proporrà l'invio del report a ${DiagnosticsReporter.SUPPORT_EMAIL}."
+                            "Attivi. In caso di crash Lyra proporrà la condivisione del report."
                         } else {
                             "Disattivati. Nessun log diagnostico viene salvato sul dispositivo."
                         },

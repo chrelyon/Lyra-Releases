@@ -1,5 +1,6 @@
 package app.lyra.music.diagnostics
 
+import app.lyra.music.BuildConfig
 import android.app.ActivityManager
 import android.app.ApplicationExitInfo
 import android.content.ActivityNotFoundException
@@ -15,7 +16,7 @@ import java.util.Locale
 import java.util.TimeZone
 
 object DiagnosticsReporter {
-    const val SUPPORT_EMAIL = "riparoerivendo@proton.me"
+    val SUPPORT_EMAIL: String = BuildConfig.LYRA_SUPPORT_EMAIL
 
     fun captureHistoricalExitIfNeeded(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -86,7 +87,7 @@ object DiagnosticsReporter {
 
             val intent = Intent(Intent.ACTION_SEND).apply {
                 type = "text/plain"
-                putExtra(Intent.EXTRA_EMAIL, arrayOf(SUPPORT_EMAIL))
+                if (SUPPORT_EMAIL.isNotBlank()) putExtra(Intent.EXTRA_EMAIL, arrayOf(SUPPORT_EMAIL))
                 putExtra(Intent.EXTRA_SUBJECT, "Lyra - report crash")
                 putExtra(
                     Intent.EXTRA_TEXT,
