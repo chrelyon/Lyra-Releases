@@ -53,12 +53,12 @@ fun DiscoverScreen(
         LazyColumn {
             if (automatic) {
                 item {
-                    AdvancedPlaylistSearch(busy = loading) { target ->
+                    AdvancedPlaylistSearch(busy = loading, onStart = { target ->
                         when (target.kind) {
                             PlaylistSearchKind.ARTIST -> playbackViewModel.startAutomaticArtist(target.title)
                             PlaylistSearchKind.ALBUM -> playbackViewModel.startAutomaticAlbum(target.id, target.title)
                         }
-                    }
+                    })
                     HorizontalDivider(Modifier.padding(vertical = 12.dp))
                     Text("Scegli un genere", style = MaterialTheme.typography.titleMedium)
                 }
