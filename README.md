@@ -28,3 +28,6 @@ riproduzione e i relativi test.
 
 Il progetto è in evoluzione; alcune funzioni possono richiedere una
 connessione Internet o autorizzazioni specifiche del dispositivo.
+
+## Token Server
+Tramite Telegram Bot @LyraMusicAccessBot
