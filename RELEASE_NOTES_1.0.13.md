@@ -6,6 +6,7 @@
 - Il catalogo Scopri viene semplificato a Playlist Automatica, Novità, Mix per me, Italiane e Decenni.
 - Aggiunto il decennio Anni 2020.
 - La voce Mix per me è rinominata e allineata tra Android e Android Auto.
+- La ricerca avanzata usa un solo campo con suggerimenti simultanei di artisti e album; la selezione avvia l'artista in ordine casuale o l'album in sequenza.
 - L'ordine della radice Scopri di Android Auto segue quello dell'app.
 
 ## Versione
