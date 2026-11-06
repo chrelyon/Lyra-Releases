@@ -442,19 +442,21 @@ class PlaybackViewModel(
             _automaticPlaylistLoading.value = true
             _automaticPlaylistError.value = null
             viewModelScope.launch {
-                runCatching { AutomaticPlaylistManager.startPersonalizedMix() }
-                    .onSuccess { result ->
-                        if (generation == automaticGeneration) {
-                            playQueue(result.songs, 0, result.title, preserveAutomaticSession = true)
-                            _automaticPlaylistLoading.value = false
-                        }
+                val result = try {
+                    AutomaticPlaylistManager.startPersonalizedMix()
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    if (generation == automaticGeneration) {
+                        _automaticPlaylistLoading.value = false
+                        startLocalPersonalizedMix(mixId)
                     }
-                    .onFailure {
-                        if (generation == automaticGeneration) {
-                            _automaticPlaylistLoading.value = false
-                            startLocalPersonalizedMix(mixId)
-                        }
-                    }
+                    return@launch
+                }
+                if (generation == automaticGeneration) {
+                    playQueue(result.songs, 0, result.title, preserveAutomaticSession = true)
+                    _automaticPlaylistLoading.value = false
+                }
             }
             return
         }
