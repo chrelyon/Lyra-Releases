@@ -32,18 +32,6 @@ internal object DiscoveryCatalog {
             )
         ),
         FolderDefinition(
-            id = "decenni",
-            title = "Decenni",
-            subtitle = "Edizioni album del periodo; prima uscita del brano non certificata",
-            groups = listOf(
-                decade("80s", "Anni 80", "80s"),
-                decade("90s", "Anni 90", "90s"),
-                decade("2000s", "Anni 2000", "2000s"),
-                decade("2010s", "Anni 2010", "2010s"),
-                decade("2020s", "Anni 2020", "2020s"),
-            ),
-        ),
-        FolderDefinition(
             id = "nazioni",
             title = "Italia & Europa",
             subtitle = "Scene e hit dai principali paesi europei",
@@ -82,7 +70,19 @@ internal object DiscoveryCatalog {
                     "Nordic hits playlist",
                     "Sweden Norway Denmark hits playlist"),
             ),
+        ),        FolderDefinition(
+            id = "decenni",
+            title = "Decenni",
+            subtitle = "Edizioni album del periodo; prima uscita del brano non certificata",
+            groups = listOf(
+                decade("80s", "Anni 80", "80s"),
+                decade("90s", "Anni 90", "90s"),
+                decade("2000s", "Anni 2000", "2000s"),
+                decade("2010s", "Anni 2010", "2010s"),
+                decade("2020s", "Anni 2020", "2020s"),
+            ),
         ),
+
     )
 
     fun queriesFor(
