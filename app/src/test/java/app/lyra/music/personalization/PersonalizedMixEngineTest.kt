@@ -41,6 +41,16 @@ class PersonalizedMixEngineTest {
         )
     }
 
+    @Test fun locallyBlockedServerTracksAreExcluded() {
+        val result = PersonalizedMixEngine.parseResponse(
+            response(JSONArray().put(track(known, "profile_rating")).put(track(fresh, "lastfm_ytmusic")), 1, 1),
+            emptyList(), emptyList(), isBlocked = { it == fresh.id },
+        )
+        assertEquals(listOf(known), result.songs)
+        assertTrue(result.warning!!.contains("esclusi"))
+        assertTrue(result.title.contains("0 novità"))
+    }
+
     @Test(expected = IllegalStateException::class)
     fun incorrectCountsAreRejected() {
         PersonalizedMixEngine.parseResponse(

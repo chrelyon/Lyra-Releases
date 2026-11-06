@@ -102,7 +102,12 @@ object PersonalizedMixEngine {
         return parseResponse(response, local, favorites)
     }
 
-    internal fun parseResponse(response: JSONObject, local: List<Song>, favorites: List<Song>): Result {
+    internal fun parseResponse(
+        response: JSONObject,
+        local: List<Song>,
+        favorites: List<Song>,
+        isBlocked: (String) -> Boolean = ListeningProfileStore::isBlocked,
+    ): Result {
         check(response.optInt("apiVersion", -1) == 2) { "Risposta Mix del server non valida" }
         val tracks = response.optJSONArray("tracks")
             ?: throw IllegalStateException("Risposta Mix del server senza brani")
@@ -111,7 +116,7 @@ object PersonalizedMixEngine {
         val seen = mutableSetOf<String>()
         var known = 0
         var fresh = 0
-        val songs = (0 until tracks.length()).map { index ->
+        val parsed = (0 until tracks.length()).map { index ->
             val item = tracks.optJSONObject(index)
                 ?: throw IllegalStateException("Brano Mix non valido")
             val id = item.opt("id") as? String ?: throw IllegalStateException("ID Mix non valido")
@@ -119,18 +124,25 @@ object PersonalizedMixEngine {
             val artist = item.opt("artist") as? String ?: throw IllegalStateException("Artista Mix non valido")
             val song = Song(id = id, title = title, artist = artist, durationSeconds = 0)
             check(PersonalizedMixPolicy.eligible(song) && seen.add(id)) { "Brano Mix non valido o duplicato" }
-            when (item.optString("source")) {
-                "local_listening", "google_favorite", "profile_rating" -> known++
-                "lastfm_ytmusic" -> fresh++
+            val isFresh = when (item.optString("source")) {
+                "local_listening", "google_favorite", "profile_rating" -> { known++; false }
+                "lastfm_ytmusic" -> { fresh++; true }
                 else -> throw IllegalStateException("Sorgente Mix non valida")
             }
-            knownById[id] ?: song
+            (knownById[id] ?: song) to isFresh
         }
         check(known == response.optInt("known_count", -1) && fresh == response.optInt("new_count", -1)) {
             "Conteggi Mix del server non validi"
         }
+        val allowed = parsed.filterNot { isBlocked(it.first.id) }
+        val songs = allowed.map { it.first }
         check(songs.isNotEmpty()) { "Nessun brano disponibile: ascolta musica o aggiungi Preferiti" }
-        val warning = PersonalizedMixPolicy.warning(known, fresh, response.optString("discovery_status"))
+        fresh = allowed.count { it.second }
+        known = allowed.size - fresh
+        val warning = listOfNotNull(
+            PersonalizedMixPolicy.warning(known, fresh, response.optString("discovery_status")),
+            "Alcuni brani sono stati esclusi dalle preferenze locali.".takeIf { allowed.size < parsed.size },
+        ).joinToString(" ").takeIf { it.isNotEmpty() }
         val title = if (warning == null) TITLE else "$TITLE · $fresh novità"
         return Result(title, songs, warning)
     }
@@ -146,7 +158,8 @@ object PersonalizedMixEngine {
         val known = pool.take(28)
         val knownIds = pool.mapTo(HashSet()) { it.id }
         val fresh = AutomaticPlaylistRepository().fromSeed(known.random()).songs
-            .filter { it.id !in knownIds }.distinctBy { it.id }
+            .filter { PersonalizedMixPolicy.eligible(it) && it.id !in knownIds && !ListeningProfileStore.isBlocked(it.id) }
+            .distinctBy { it.id }
             .take(PersonalizedMixPolicy.freshTarget(known.size))
         val iterator = fresh.iterator()
         val queue = buildList {
