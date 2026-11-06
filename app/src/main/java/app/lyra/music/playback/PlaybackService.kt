@@ -1641,7 +1641,7 @@ class PlaybackService : MediaLibraryService() {
         .setMediaMetadata(
             MediaMetadata.Builder()
                 .setTitle("Playlist Automatica")
-                .setSubtitle("Scegli mood o genere e lascia continuare Lyra")
+                .setSubtitle("Scegli uno dei 14 generi musicali")
                 .setArtworkUri(autoArtworkUri(null, R.drawable.auto_art_automatic))
                 .setExtras(compactFolderStyleExtras())
                 .setIsBrowsable(true)
