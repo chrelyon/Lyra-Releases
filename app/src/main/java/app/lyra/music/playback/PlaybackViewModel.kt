@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import app.lyra.music.core.model.Song
 import app.lyra.music.audio.AudioSettings
 import app.lyra.music.personalization.PersonalizedMixEngine
+import app.lyra.music.personalization.PersonalizationSettings
 import app.lyra.music.youtube.repository.DiscoveryDirectMixRepository
 import app.lyra.music.youtube.likes.YouTubeLikesManager
 import kotlinx.coroutines.Dispatchers
@@ -433,8 +434,36 @@ class PlaybackViewModel(
         }
     }
 
-    /** Avvia uno dei mix locali della sezione Scopri -> Per te. */
+    /** Avvia il Mix per me dal server, con fallback al motore locale. */
     fun startPersonalizedMix(mixId: String) {
+        if (mixId == PersonalizedMixEngine.DAILY_ID && PersonalizationSettings.useServerAlgorithm.value) {
+            val generation = ++automaticGeneration
+            AutomaticPlaylistManager.clear()
+            _automaticPlaylistLoading.value = true
+            _automaticPlaylistError.value = null
+            viewModelScope.launch {
+                val result = try {
+                    AutomaticPlaylistManager.startPersonalizedMix()
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    if (generation == automaticGeneration) {
+                        _automaticPlaylistLoading.value = false
+                        startLocalPersonalizedMix(mixId)
+                    }
+                    return@launch
+                }
+                if (generation == automaticGeneration) {
+                    playQueue(result.songs, 0, result.title, preserveAutomaticSession = true)
+                    _automaticPlaylistLoading.value = false
+                }
+            }
+            return
+        }
+        startLocalPersonalizedMix(mixId)
+    }
+
+    private fun startLocalPersonalizedMix(mixId: String) {
         val automatic = PersonalizedMixEngine.automaticSeed(mixId)
         if (automatic != null) {
             val (seed, title) = automatic

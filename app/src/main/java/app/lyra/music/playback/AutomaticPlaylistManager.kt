@@ -163,6 +163,27 @@ object AutomaticPlaylistManager {
         }
     }
 
+    /** Mix personale remoto: il server usa gradimento, ascolti completi, skip e preferiti. */
+    suspend fun startPersonalizedMix(): StartResult {
+        val title = "Mix per me"
+        if (!PersonalizationSettings.useServerAlgorithm.value) {
+            throw IllegalStateException("Server disattivato")
+        }
+        val client = ServerPlaylistClient("mix", "for_me", title)
+        remote = client
+        return try {
+            val songs = client.next(emptySet())
+            if (remote !== client) throw CancellationException("Playlist cambiata")
+            installServerSession(title, songs, null)
+            StartResult(title, songs)
+        } catch (error: Exception) {
+            if (error is CancellationException) throw error
+            client.localFallback()
+            if (remote === client) remote = null
+            throw error
+        }
+    }
+
     suspend fun startFromSeed(
         seed: Song,
         title: String = "Radio: ${seed.title}",
