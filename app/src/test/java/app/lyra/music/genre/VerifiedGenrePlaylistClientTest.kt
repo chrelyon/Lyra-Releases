@@ -9,8 +9,8 @@ import org.junit.Test
 class VerifiedGenrePlaylistClientTest {
     @Test fun supportsAllApplicationAutomaticPresetsWithDifferentMoodSemantics() {
         val genres = listOf(
-            "pop", "rock", "rap", "dance", "house", "techno", "edm",
-            "indie", "rnb", "metal", "jazz", "classica",
+            "pop", "rock", "metal", "house", "techno", "electronic", "dance",
+            "rap", "rnb", "jazz", "blues", "reggae", "classica", "folk",
         )
         val moods = listOf("relax", "energia", "party", "focus", "romantica")
         for (name in genres) {
@@ -23,7 +23,9 @@ class VerifiedGenrePlaylistClientTest {
             assertTrue("Mood misclassified as music genre: $name",
                 VerifiedGenrePlaylistClient.isMood(name))
         }
-        assertFalse(VerifiedGenrePlaylistClient.supported("electronic"))
+        assertTrue(VerifiedGenrePlaylistClient.supported("electronic"))
+        assertFalse(VerifiedGenrePlaylistClient.supported("edm"))
+        assertFalse(VerifiedGenrePlaylistClient.supported("indie"))
         assertFalse(VerifiedGenrePlaylistClient.supported("unknown"))
         assertFalse(VerifiedGenrePlaylistClient.supported(null))
     }
