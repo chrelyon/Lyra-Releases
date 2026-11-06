@@ -22,7 +22,7 @@ class DiscoverViewModel : ViewModel() {
             DiscoveryFolderSummary(
                 id = AUTOMATIC_FOLDER_ID,
                 title = "Playlist Automatica",
-                subtitle = "Scegli mood o genere e lascia continuare Lyra",
+                subtitle = "Scegli un genere musicale e lascia continuare Lyra",
                 groupCount = AutomaticPlaylistCatalog.presets.size,
             ),
         ) + repository.getDiscoveryFolders().take(1) + listOf(
