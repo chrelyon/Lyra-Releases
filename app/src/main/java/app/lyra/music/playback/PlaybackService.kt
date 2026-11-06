@@ -532,8 +532,9 @@ class PlaybackService : MediaLibraryService() {
                     // Stesso ordine e stessi nodi della schermata Scopri Android:
                     // Playlist Automatica, Per te e le cartelle del DiscoveryCatalog.
                     add(buildAutomaticPlaylistRootMediaItem())
+                    folders.firstOrNull()?.let { add(buildDiscoverFolderMediaItem(it)) }
                     add(buildForYouRootMediaItem())
-                    addAll(folders.map(::buildDiscoverFolderMediaItem))
+                    addAll(folders.drop(1).map(::buildDiscoverFolderMediaItem))
                 }.forBrowser(session, browser, page, pageSize)
                 Log.d(
                     "LYRA_AUTO",
