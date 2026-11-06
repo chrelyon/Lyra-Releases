@@ -13,7 +13,7 @@ import kotlinx.coroutines.launch
 
 data class PlaylistSearchState(
     val query: String = "",
-    val kind: PlaylistSearchKind = PlaylistSearchKind.ARTIST,
+    val kind: PlaylistSearchKind = PlaylistSearchKind.BOTH,
     val suggestions: List<PlaylistSearchTarget> = emptyList(),
     val selected: PlaylistSearchTarget? = null,
     val loading: Boolean = false,
@@ -53,7 +53,7 @@ class PlaylistSearchController(
         job = scope.launch {
             try {
                 if (!immediate) delay(debounceMs)
-                val found = search(query, snapshot.kind).filter { it.kind == snapshot.kind }.distinctBy { it.id }.take(8)
+                val found = search(query, snapshot.kind).filter { snapshot.kind == PlaylistSearchKind.BOTH || it.kind == snapshot.kind }.distinctBy { "${it.kind}:${it.id}" }.take(12)
                 if (revision == expected) mutable.value = mutable.value.copy(suggestions = found, loading = false, searched = true)
             } catch (_: TimeoutCancellationException) {
                 if (revision == expected) mutable.value = mutable.value.copy(loading = false, error = "Ricerca scaduta. Riprova.", searched = true)
@@ -66,7 +66,7 @@ class PlaylistSearchController(
     }
 
     fun select(target: PlaylistSearchTarget) {
-        if (target !in mutable.value.suggestions || target.kind != mutable.value.kind) return
+        if (target !in mutable.value.suggestions || (mutable.value.kind != PlaylistSearchKind.BOTH && target.kind != mutable.value.kind)) return
         ++revision; job?.cancel()
         mutable.value = mutable.value.copy(query = target.title, selected = target, suggestions = emptyList(), loading = false, error = null)
     }
