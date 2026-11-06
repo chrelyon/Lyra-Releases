@@ -32,53 +32,6 @@ internal object DiscoveryCatalog {
             )
         ),
         FolderDefinition(
-            id = "mood",
-            title = "Mood",
-            subtitle = "Scegli il mood, Lyra prepara direttamente la musica",
-            groups = listOf(
-                group("relax", "Relax",
-                    "relax Italia playlist",
-                    "European relax playlist",
-                    "relax music Europe playlist"),
-                group("chill", "Chill",
-                    "chill Italia playlist",
-                    "European chill playlist",
-                    "chill music Europe playlist"),
-                group("energia", "Energia",
-                    "energia musica Italia playlist",
-                    "energy boost Europe playlist",
-                    "European energy hits playlist"),
-                group("party", "Party",
-                    "party hits Italia playlist",
-                    "European party hits playlist",
-                    "party music Europe playlist"),
-                group("romantica", "Romantica",
-                    "canzoni romantiche italiane playlist",
-                    "romantic Europe playlist",
-                    "European love songs playlist"),
-                group("focus", "Concentrazione",
-                    "focus Italia playlist",
-                    "focus music Europe playlist",
-                    "European study focus playlist"),
-                group("malinconica", "Malinconica",
-                    "malinconica italiana playlist",
-                    "sad songs Europe playlist",
-                    "European emotional playlist"),
-            ),
-        ),
-        FolderDefinition(
-            id = "attivita",
-            title = "Workout",
-            subtitle = "Allenamento continuo scelto da Lyra da YouTube Music",
-            groups = listOf(
-                group("workout", "Workout e allenamento",
-                    "workout gym fitness music playlist",
-                    "best training motivation playlist",
-                    "workout elettronica dance fitness playlist",
-                    "running gym high energy playlist"),
-            ),
-        ),
-        FolderDefinition(
             id = "decenni",
             title = "Decenni",
             subtitle = "Edizioni album del periodo; prima uscita del brano non certificata",
@@ -87,6 +40,7 @@ internal object DiscoveryCatalog {
                 decade("90s", "Anni 90", "90s"),
                 decade("2000s", "Anni 2000", "2000s"),
                 decade("2010s", "Anni 2010", "2010s"),
+                decade("2020s", "Anni 2020", "2020s"),
             ),
         ),
         FolderDefinition(
@@ -172,29 +126,15 @@ internal object DiscoveryCatalog {
         folder: FolderDefinition,
         mode: DiscoverySettings.RegionMode,
     ): List<GroupDefinition> {
-        if (folder.id != "nazioni") return folder.groups
-        return when (mode) {
-            DiscoverySettings.RegionMode.ITALY -> folder.groups.filter { it.id == "italia" }
-            DiscoverySettings.RegionMode.ITALY_EUROPE -> folder.groups
-            DiscoverySettings.RegionMode.INTERNATIONAL -> folder.groups + internationalSceneGroups
-        }
+        if (folder.id == "nazioni") return folder.groups.filter { it.id == "italia" }
+        return folder.groups
     }
 
     fun folderTitle(folder: FolderDefinition, mode: DiscoverySettings.RegionMode): String =
-        if (folder.id == "nazioni" && mode == DiscoverySettings.RegionMode.INTERNATIONAL) {
-            "Nazioni e scene"
-        } else if (folder.id == "nazioni" && mode == DiscoverySettings.RegionMode.ITALY) {
-            "Italia"
-        } else {
-            folder.title
-        }
+        if (folder.id == "nazioni") "Italiane" else folder.title
 
     fun folderSubtitle(folder: FolderDefinition, mode: DiscoverySettings.RegionMode): String =
-        if (folder.id != "nazioni") folder.subtitle else when (mode) {
-            DiscoverySettings.RegionMode.ITALY -> "Playlist e scene italiane"
-            DiscoverySettings.RegionMode.ITALY_EUROPE -> folder.subtitle
-            DiscoverySettings.RegionMode.INTERNATIONAL -> "Scene e hit da Italia, Europa e resto del mondo"
-        }
+        if (folder.id == "nazioni") "Canzoni italiane" else folder.subtitle
 
     private fun group(id: String, title: String, vararg queries: String) =
         GroupDefinition(id = id, title = title, queries = queries.toList())
