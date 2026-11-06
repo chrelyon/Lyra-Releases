@@ -27,6 +27,7 @@ Scopri in Android Auto.
    nello stesso ordine.
 5. Aprire Playlist Automatica: devono apparire soltanto Pop, Rock, House e Techno.
 6. Provare Mix per me e Novità: entrambi devono avviare direttamente una coda.
+   Mix per me deve usare il profilo server se attivo, con fallback locale.
 7. Se Android Auto conserva una schermata già aperta, uscire dal browser Lyra,
    chiudere la connessione Android Auto e riaprirla: gli ID della nuova
    navigazione sono versionati per invalidare il vecchio albero memorizzato.
