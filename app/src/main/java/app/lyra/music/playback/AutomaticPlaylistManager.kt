@@ -89,11 +89,6 @@ object AutomaticPlaylistManager {
     private fun serverLabel()=when(remote?.kind) { "context" -> "Server · contesto appreso"; "artist" -> "Server · artista richiesto"; else -> "Server · genere verificato" }
     fun serverBinding(): Any? = remote
 
-    private val serverGenres = mapOf("pop" to "pop", "rock" to "rock", "rap" to "hip hop",
-        "dance" to "dance", "house" to "house", "techno" to "techno", "edm" to "electronic dance music|electronic",
-        "rnb" to "rhythm and blues|soul", "indie" to "indie rock|indie pop",
-        "metal" to "metal", "jazz" to "jazz", "classica" to "classical")
-
     /** Restore binding only for the exact saved automatic queue. Manual queues never adopt it. */
     @Synchronized fun restoreServerBinding(title: String, songs: List<Song>) {
         if (session != null || songs.isEmpty() || !PersonalizationSettings.useServerAlgorithm.value) return
