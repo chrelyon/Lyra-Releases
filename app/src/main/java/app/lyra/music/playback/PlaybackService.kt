@@ -1667,8 +1667,8 @@ class PlaybackService : MediaLibraryService() {
         .setMediaId(AUTO_FOR_YOU_ROOT_ID)
         .setMediaMetadata(
             MediaMetadata.Builder()
-                .setTitle("Per te")
-                .setSubtitle("Mix creati localmente dai tuoi ascolti")
+                .setTitle("Mix per me")
+                .setSubtitle("Mix personalizzato dai tuoi ascolti e preferiti")
                 .setArtworkUri(autoArtworkUri(null, R.drawable.auto_art_for_you))
                 .setExtras(compactFolderStyleExtras())
                 .setIsBrowsable(true)
