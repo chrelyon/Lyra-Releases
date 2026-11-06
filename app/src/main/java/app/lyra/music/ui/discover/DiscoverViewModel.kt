@@ -25,13 +25,14 @@ class DiscoverViewModel : ViewModel() {
                 subtitle = "Scegli mood o genere e lascia continuare Lyra",
                 groupCount = AutomaticPlaylistCatalog.presets.size,
             ),
+        ) + repository.getDiscoveryFolders().take(1) + listOf(
             DiscoveryFolderSummary(
                 id = FOR_YOU_FOLDER_ID,
                 title = "Mix per me",
                 subtitle = "Mix personalizzato dai tuoi ascolti e preferiti",
                 groupCount = PersonalizedMixEngine.summaries().size,
             ),
-        ) + repository.getDiscoveryFolders()
+        ) + repository.getDiscoveryFolders().drop(1)
     )
     val folders: StateFlow<List<DiscoveryFolderSummary>> = _folders.asStateFlow()
 
