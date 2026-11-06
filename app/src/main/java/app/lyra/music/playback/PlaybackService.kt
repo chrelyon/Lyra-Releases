@@ -2501,11 +2501,14 @@ class PlaybackService : MediaLibraryService() {
                 ?: throw IllegalArgumentException("Mix Lyra non riconosciuto")
             if (mixId == PersonalizedMixEngine.DAILY_ID && PersonalizationSettings.useServerAlgorithm.value) {
                 AutomaticPlaylistManager.clear()
-                val serverResult = runCatching {
+                val serverResult = try {
                     AutomaticPlaylistManager.startPersonalizedMix()
-                }.onFailure { error ->
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
                     Log.w("LYRA_AUTO", "forYouServerFallback message=${error.message}")
-                }.getOrNull()
+                    null
+                }
                 if (serverResult != null) {
                     val first = serverResult.songs.firstOrNull()
                         ?: throw IllegalStateException("Mix per me senza brani")
