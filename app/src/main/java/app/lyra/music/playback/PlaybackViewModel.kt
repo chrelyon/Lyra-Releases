@@ -415,6 +415,7 @@ class PlaybackViewModel(
             startIndex = entry.currentIndex.coerceIn(0, entry.queueSongs.lastIndex),
             queueTitle = entry.queueTitle,
             preserveAutomaticSession = entry.automatic,
+            allowSmartContinuation = entry.allowSmartContinuation,
         )
         if (entry.automatic) {
             val generation = automaticGeneration
@@ -442,12 +443,15 @@ class PlaybackViewModel(
             runCatching { PersonalizedMixEngine.build() }
                 .onSuccess { result ->
                     if (generation == automaticGeneration) {
+                        AutomaticPlaylistManager.clear()
                         playQueue(
                             songs = result.songs,
                             startIndex = 0,
                             queueTitle = result.title,
                             preserveAutomaticSession = true,
+                            allowSmartContinuation = false,
                         )
+                        _automaticPlaylistError.value = result.warning
                     }
                 }
                 .onFailure { error ->

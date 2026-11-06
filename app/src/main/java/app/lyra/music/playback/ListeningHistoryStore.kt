@@ -29,6 +29,7 @@ object ListeningHistoryStore {
         val currentIndex: Int,
         val automatic: Boolean,
         val listenedAtMs: Long,
+        val allowSmartContinuation: Boolean = true,
     )
 
     private lateinit var appContext: Context
@@ -62,6 +63,7 @@ object ListeningHistoryStore {
             currentIndex = safeIndex,
             automatic = automatic,
             listenedAtMs = listenedAtMs,
+            allowSmartContinuation = queueState.allowSmartContinuation,
         )
 
         val updated = buildList {
@@ -113,6 +115,7 @@ object ListeningHistoryStore {
         .put("currentIndex", currentIndex)
         .put("automatic", automatic)
         .put("listenedAtMs", listenedAtMs)
+        .put("allowSmartContinuation", allowSmartContinuation)
 
     /** Compatibilita' con la cronologia 0.3.12, che salvava direttamente Song. */
     private fun JSONObject.toEntryOrNull(legacyIndex: Int): Entry? {
@@ -150,6 +153,7 @@ object ListeningHistoryStore {
             currentIndex = safeIndex,
             automatic = optBoolean("automatic", false),
             listenedAtMs = timestamp,
+            allowSmartContinuation = optBoolean("allowSmartContinuation", true),
         )
     }
 

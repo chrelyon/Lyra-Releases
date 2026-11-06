@@ -1,5 +1,6 @@
 package app.lyra.music.youtube.repository
 
+import app.lyra.music.genre.VerifiedGenrePlaylistClient
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Test
@@ -22,9 +23,10 @@ class DiscoverMenuTest {
     @Test fun automaticMenuHasOnlySupportedGenres() {
         val ids = AutomaticPlaylistCatalog.menuPresets.map { it.id }
         assertEquals(
-            listOf("pop", "rock", "metal", "house", "techno", "edm", "dance", "rap", "rnb", "jazz", "classica"),
+            listOf("pop", "rock", "metal", "house", "techno", "edm", "dance", "rap", "rnb", "jazz", "blues", "reggae", "classica"),
             ids,
         )
         assertFalse("relax" in ids)
+        ids.forEach { assertEquals(true, VerifiedGenrePlaylistClient.supported(it)) }
     }
 }

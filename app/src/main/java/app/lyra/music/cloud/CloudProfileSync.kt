@@ -376,6 +376,13 @@ object CloudProfileSync {
             requestJson(method, path, ensureIdentity(), payload)
         }
 
+    internal suspend fun personalizedMixRequest(payload: JSONObject): JSONObject = withContext(Dispatchers.IO) {
+        check(playlistOwner() != null) {
+            "Attiva il collegamento e il backup musicale Lyra Server nelle Impostazioni"
+        }
+        requestJson("POST", "/v2/mix", ensureIdentity(), payload)
+    }
+
     @Synchronized private fun installationId(): String {
         val prefs=appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         return prefs.getString("installation_id", null) ?: encode(randomBytes(16)).also {
@@ -408,6 +415,9 @@ object CloudProfileSync {
                     ?.takeIf { it.length<=80 && it.matches(Regex("[a-z_]+")) }
                 throw LyraServerHttpException(code,reason)
             }
+            if (path == "/v2/mix" && code == HttpURLConnection.HTTP_NOT_FOUND) {
+                throw IllegalStateException("Mix non disponibile: aggiorna il server Lyra e verifica il profilo")
+            }
             if (code == HttpURLConnection.HTTP_NOT_FOUND) {
                 throw IllegalStateException("Nessun backup musicale associato a questo codice")
             }
@@ -432,7 +442,11 @@ object CloudProfileSync {
             requestMethod = method
             instanceFollowRedirects = false
             connectTimeout = if (path.startsWith("/v3/")) 4000 else REQUEST_TIMEOUT_MS
-            readTimeout = if (path.startsWith("/v3/")) 4000 else REQUEST_TIMEOUT_MS
+            readTimeout = when {
+                path.startsWith("/v3/") -> 4000
+                path == "/v2/mix" -> 60_000
+                else -> REQUEST_TIMEOUT_MS
+            }
             setRequestProperty("Accept", "application/json")
             setRequestProperty("Authorization", "Bearer ${identity.secret}")
             setRequestProperty("X-Lyra-Listener", identity.listenerId)

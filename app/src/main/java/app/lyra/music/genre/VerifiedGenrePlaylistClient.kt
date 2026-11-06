@@ -19,7 +19,7 @@ import java.net.URL
 object VerifiedGenrePlaylistClient {
     private val genrePresets = setOf(
         "pop", "rock", "rap", "dance", "house", "techno", "edm",
-        "indie", "rnb", "metal", "jazz", "classica",
+        "indie", "rnb", "metal", "jazz", "blues", "reggae", "classica",
     )
     private val moodPresets = setOf("relax", "energia", "party", "focus", "romantica")
     private val videoId = Regex("^[A-Za-z0-9_-]{11}$")

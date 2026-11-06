@@ -58,8 +58,8 @@ android {
         minSdk = 26
         targetSdk = 36
 
-        versionCode = 51
-        versionName = "1.0.13"
+        versionCode = 52
+        versionName = "1.0.14"
 
         buildConfigField("String", "INNERTUBEX_VERSION", "\"$innerTubeXVersion\"")
     }
@@ -141,6 +141,7 @@ dependencies {
     implementation("io.coil-kt.coil3:coil-network-okhttp:3.6.2")
 
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 

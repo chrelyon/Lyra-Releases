@@ -188,6 +188,10 @@ object AutomaticPlaylistCatalog {
             "metal Italia", "European metal", "Italian metal"),
         preset("jazz", "Jazz", "Jazz",
             "jazz Italia", "European jazz", "Italian jazz"),
+        preset("blues", "Blues", "Blues e blues rock",
+            "blues Italia", "blues rock", "classic blues"),
+        preset("reggae", "Reggae", "Reggae e roots reggae",
+            "reggae Italia", "roots reggae", "classic reggae"),
         preset("classica", "Classica", "Musica classica",
             "classical Europe", "musica classica Italia", "European classical music"),
     )
@@ -195,7 +199,7 @@ object AutomaticPlaylistCatalog {
     /** Generi mostrati nei menu (app e Android Auto), nell'ordine di visualizzazione. */
     private val menuIds = listOf(
         "pop", "rock", "metal", "house", "techno", "edm",
-        "dance", "rap", "rnb", "jazz", "classica",
+        "dance", "rap", "rnb", "jazz", "blues", "reggae", "classica",
     )
 
     val menuPresets: List<Preset> = menuIds.mapNotNull { preset(it) }

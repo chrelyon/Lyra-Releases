@@ -32,7 +32,7 @@ internal object DiscoverMenu {
             ),
             Entry(
                 MIX_ID, "Mix per me",
-                "70% dai tuoi ascolti e Preferiti, 30% di novità", Kind.MIX,
+                "Circa 70% ascolti e Preferiti, 30% novità quando disponibili", Kind.MIX,
             ),
             Entry(novita.id, novita.title, novita.subtitle, Kind.DIRECT, novita.groups.first().id),
             Entry(italiane.id, italiane.title, italiane.subtitle, Kind.DIRECT, italiane.groups.first().id),

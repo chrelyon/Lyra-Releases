@@ -1674,6 +1674,7 @@ class PlaybackService : MediaLibraryService() {
             queueSongs = entry.queueSongs,
             index = entry.currentIndex.coerceIn(0, entry.queueSongs.lastIndex),
             historyAutomatic = entry.automatic,
+            allowSmartContinuation = entry.allowSmartContinuation,
         )
         return MediaItem.Builder()
             .setMediaId(mediaId)
@@ -2257,12 +2258,13 @@ class PlaybackService : MediaLibraryService() {
 
         if (mediaId == AUTO_MIX_ID) {
             val result = PersonalizedMixEngine.build()
+            AutomaticPlaylistManager.clear()
             return AutoSongContext(
                 song = result.songs.first(),
                 queueTitle = result.title,
                 queueSongs = result.songs,
                 index = 0,
-                automaticSeed = true,
+                allowSmartContinuation = false,
             )
         }
 
@@ -2391,6 +2393,7 @@ class PlaybackService : MediaLibraryService() {
             currentIndex = context.index.coerceIn(0, context.queueSongs.lastIndex),
             shuffleEnabled = context.shuffleEnabled,
             repeatMode = previous?.repeatMode ?: PlaybackRepeatMode.OFF,
+            allowSmartContinuation = context.allowSmartContinuation,
             resumePositionMs = 0L,
         )
         playbackSessionStore.saveQueue(
@@ -3467,4 +3470,5 @@ private data class AutoSongContext(
     val shuffleEnabled: Boolean = false,
     val automaticSeed: Boolean = false,
     val historyAutomatic: Boolean = false,
+    val allowSmartContinuation: Boolean = true,
 )
