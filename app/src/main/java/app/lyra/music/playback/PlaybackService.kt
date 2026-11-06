@@ -903,15 +903,8 @@ class PlaybackService : MediaLibraryService() {
                 AUTO_HISTORY_ROOT_ID -> return Futures.immediateFuture(
                     LibraryResult.ofItem(buildHistoryRootMediaItem(), null)
                 )
-                AUTO_DISCOVER_TOP_ID -> return Futures.immediateFuture(
-                    LibraryResult.ofItem(buildDiscoverTopMediaItem(), null)
-                )
-                AUTO_DISCOVER_PLAYLISTS_ID -> return Futures.immediateFuture(
-                    LibraryResult.ofItem(buildDiscoverPlaylistsMediaItem(), null)
-                )
-                AUTO_DISCOVER_GENRES_ID -> return Futures.immediateFuture(
-                    LibraryResult.ofItem(buildDiscoverGenresMediaItem(), null)
-                )
+                AUTO_DISCOVER_TOP_ID, AUTO_DISCOVER_PLAYLISTS_ID, AUTO_DISCOVER_GENRES_ID ->
+                    return Futures.immediateFuture(LibraryResult.ofItem(buildDiscoverMediaItem(), null))
                 AUTO_LOCAL_ROOT_ID -> return Futures.immediateFuture(
                     LibraryResult.ofItem(buildLocalLibraryMediaItem(), null)
                 )
