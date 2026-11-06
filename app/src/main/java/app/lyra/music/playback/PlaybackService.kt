@@ -532,8 +532,9 @@ class PlaybackService : MediaLibraryService() {
                     // Stesso ordine e stessi nodi della schermata Scopri Android:
                     // Playlist Automatica, Per te e le cartelle del DiscoveryCatalog.
                     add(buildAutomaticPlaylistRootMediaItem())
+                    folders.firstOrNull()?.let { add(buildDiscoverFolderMediaItem(it)) }
                     add(buildForYouRootMediaItem())
-                    addAll(folders.map(::buildDiscoverFolderMediaItem))
+                    addAll(folders.drop(1).map(::buildDiscoverFolderMediaItem))
                 }.forBrowser(session, browser, page, pageSize)
                 Log.d(
                     "LYRA_AUTO",
@@ -1640,7 +1641,7 @@ class PlaybackService : MediaLibraryService() {
         .setMediaMetadata(
             MediaMetadata.Builder()
                 .setTitle("Playlist Automatica")
-                .setSubtitle("Scegli mood o genere e lascia continuare Lyra")
+                .setSubtitle("Scegli uno dei 14 generi musicali")
                 .setArtworkUri(autoArtworkUri(null, R.drawable.auto_art_automatic))
                 .setExtras(compactFolderStyleExtras())
                 .setIsBrowsable(true)
@@ -1667,8 +1668,8 @@ class PlaybackService : MediaLibraryService() {
         .setMediaId(AUTO_FOR_YOU_ROOT_ID)
         .setMediaMetadata(
             MediaMetadata.Builder()
-                .setTitle("Per te")
-                .setSubtitle("Mix creati localmente dai tuoi ascolti")
+                .setTitle("Mix per me")
+                .setSubtitle("Mix personalizzato dai tuoi ascolti e preferiti")
                 .setArtworkUri(autoArtworkUri(null, R.drawable.auto_art_for_you))
                 .setExtras(compactFolderStyleExtras())
                 .setIsBrowsable(true)

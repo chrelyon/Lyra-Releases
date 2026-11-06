@@ -141,7 +141,7 @@ fun DiscoverScreen(
                     items(folders, key = { it.id }) { folder ->
                         DiscoverCard(
                             title = folder.title,
-                            subtitle = if (folder.id == "attivita") folder.subtitle else "${folder.subtitle} · ${folder.groupCount} categorie",
+                            subtitle = if (folder.id == DiscoverViewModel.AUTOMATIC_FOLDER_ID) "${folder.subtitle} · ${folder.groupCount} generi" else folder.subtitle,
                             icon = folderIcon(folder.id),
                             onClick = {
                                 if (folder.id == "attivita") playbackViewModel.startDiscoveryMix("attivita", "workout")

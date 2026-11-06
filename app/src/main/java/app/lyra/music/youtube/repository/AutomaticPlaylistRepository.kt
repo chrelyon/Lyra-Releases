@@ -35,7 +35,7 @@ class AutomaticPlaylistRepository {
         } ?: throw IllegalStateException("Ricerca artista non disponibile")
         return result.items.filterIsInstance<SongItem>()
             .filter { item -> app.lyra.music.personalization.RequestedArtistPolicy.matches(artist,item.artists.map { it.name }) }
-            .map(SongItem::toAutomaticSong).distinctBy { it.id }.take(20)
+            .map(SongItem::toAutomaticSong).distinctBy { it.id }.shuffled().take(20)
             .also { check(it.isNotEmpty()) { "Nessun brano per questo artista" } }
     }
 
@@ -156,40 +156,34 @@ object AutomaticPlaylistCatalog {
     )
 
     val presets: List<Preset> = listOf(
-        preset("relax", "Relax", "Atmosfera rilassata",
-            "relax Italia music", "European chill relax", "soft pop Europe"),
-        preset("energia", "Energia", "Brani energici e positivi",
-            "energia hit Italia", "European energy hits", "upbeat pop Europe"),
-        preset("party", "Party", "Musica da festa",
-            "party hits Italia", "European party hits", "dance party Europe"),
-        preset("focus", "Concentrazione", "Musica per lavorare e studiare",
-            "focus music Europe", "study music Italy", "concentration playlist Europe"),
-        preset("romantica", "Romantica", "Atmosfera romantica",
-            "canzoni romantiche italiane", "European love songs", "romantic pop Europe"),
         preset("pop", "Pop", "Pop italiano e internazionale",
             "pop Italia hits", "Italian pop hits", "global pop hits", "international pop hits"),
-        preset("rock", "Rock", "Rock e preferenze personali",
+        preset("rock", "Rock", "Rock italiano e internazionale",
             "rock Italia", "European rock", "Italian rock hits"),
-        preset("rap", "Hip Hop e Rap", "Hip Hop e Rap",
-            "rap italiano", "European hip hop", "hip hop Italia"),
-        preset("dance", "Dance", "Dance",
-            "dance Italia hits", "European dance hits", "dance Europe"),
-        preset("house", "House", "House, deep e tech house",
+        preset("metal", "Metal", "Heavy metal e sottogeneri",
+            "metal Italia", "European metal", "Italian metal"),
+        preset("house", "House", "House, deep house e tech house",
             "house Italia", "European house", "deep house Europe", "tech house Europe"),
         preset("techno", "Techno", "Techno e melodic techno",
             "techno Italia", "European techno", "Berlin techno", "melodic techno Europe"),
-        preset("edm", "EDM ed Elettronica", "EDM ed elettronica",
-            "EDM Italia", "European electronic music", "EDM Europe"),
-        preset("indie", "Indie", "Indie rock e indie pop",
-            "indie Italia", "European indie", "Italian indie"),
-        preset("rnb", "R&B e Soul", "R&B e soul",
-            "R&B Italia", "European R&B", "soul Europe"),
-        preset("metal", "Metal", "Metal",
-            "metal Italia", "European metal", "Italian metal"),
-        preset("jazz", "Jazz", "Jazz",
+        preset("electronic", "Elettronica", "Musica elettronica",
+            "electronic music Europe", "electronica Italy", "electro music"),
+        preset("dance", "Dance", "Dance italiana e internazionale",
+            "dance Italia hits", "European dance hits", "dance Europe"),
+        preset("rap", "Hip hop", "Hip hop e rap",
+            "rap italiano", "European hip hop", "hip hop Italia"),
+        preset("rnb", "R&B", "Rhythm and blues",
+            "R&B Italia", "European R&B", "contemporary R&B"),
+        preset("jazz", "Jazz", "Jazz e sue espressioni",
             "jazz Italia", "European jazz", "Italian jazz"),
+        preset("blues", "Blues", "Blues tradizionale ed elettrico",
+            "blues Italia", "European blues", "Chicago blues"),
+        preset("reggae", "Reggae", "Reggae e roots reggae",
+            "reggae Italia", "European reggae", "roots reggae"),
         preset("classica", "Classica", "Musica classica",
             "classical Europe", "musica classica Italia", "European classical music"),
+        preset("folk", "Folk", "Folk tradizionale e contemporaneo",
+            "folk Italia", "European folk", "traditional folk Europe"),
     )
 
     fun preset(id: String): Preset? = presets.firstOrNull { it.id == id }

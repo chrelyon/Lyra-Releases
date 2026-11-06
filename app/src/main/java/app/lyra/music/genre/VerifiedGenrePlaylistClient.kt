@@ -18,8 +18,8 @@ import java.net.URL
  */
 object VerifiedGenrePlaylistClient {
     private val genrePresets = setOf(
-        "pop", "rock", "rap", "dance", "house", "techno", "edm",
-        "indie", "rnb", "metal", "jazz", "classica",
+        "pop", "rock", "metal", "house", "techno", "electronic", "dance",
+        "rap", "rnb", "jazz", "blues", "reggae", "classica", "folk",
     )
     private val moodPresets = setOf("relax", "energia", "party", "focus", "romantica")
     private val videoId = Regex("^[A-Za-z0-9_-]{11}$")
@@ -29,6 +29,7 @@ object VerifiedGenrePlaylistClient {
         preset != null && (preset in genrePresets || preset in moodPresets)
 
     fun isMood(preset: String?): Boolean = preset != null && preset in moodPresets
+    fun isGenre(preset: String?): Boolean = preset != null && preset in genrePresets
     fun enabled(preset: String?): Boolean =
         supported(preset) && GenreClassifierSettings.isConfigured()
 

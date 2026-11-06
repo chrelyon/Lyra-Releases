@@ -35,14 +35,10 @@ fun AdvancedPlaylistSearch(
     val focus = LocalFocusManager.current
     DisposableEffect(controller) { onDispose { controller.clear() } }
     Text("Cerca avanzato", style = MaterialTheme.typography.titleMedium)
-    Text("Cerca un artista o un album. Per il genere scegli una categoria qui sotto.",
+    Text("Scrivi un nome: Lyra suggerisce automaticamente artisti e album.",
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        FilterChip(selected = state.kind == PlaylistSearchKind.ARTIST, onClick = { controller.kindChanged(PlaylistSearchKind.ARTIST) }, label = { Text("Artisti") }, enabled = !busy)
-        FilterChip(selected = state.kind == PlaylistSearchKind.ALBUM, onClick = { controller.kindChanged(PlaylistSearchKind.ALBUM) }, label = { Text("Album") }, enabled = !busy)
-    }
     OutlinedTextField(value = state.query, onValueChange = controller::queryChanged,
-        label = { Text(if (state.kind == PlaylistSearchKind.ARTIST) "Nome artista" else "Titolo album o artista") },
+        label = { Text("Artista o album") },
         singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth(),
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
         keyboardActions = KeyboardActions(onSearch = { controller.refresh(immediate = true) }))
@@ -67,6 +63,6 @@ fun AdvancedPlaylistSearch(
     state.selected?.let { target -> Text("Selezionato: ${target.title} · ${target.subtitle}", style = MaterialTheme.typography.bodySmall) }
     Button(onClick = { state.selected?.let { focus.clearFocus(); onStart(it) } }, enabled = state.selected != null && !busy,
         modifier = Modifier.padding(vertical = 8.dp)) {
-        Text(if (state.kind == PlaylistSearchKind.ARTIST) "Crea playlist artista" else "Riproduci album")
+        Text("Avvia selezione")
     }
 }
