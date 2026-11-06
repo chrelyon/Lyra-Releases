@@ -35,7 +35,7 @@ class AutomaticPlaylistRepository {
         } ?: throw IllegalStateException("Ricerca artista non disponibile")
         return result.items.filterIsInstance<SongItem>()
             .filter { item -> app.lyra.music.personalization.RequestedArtistPolicy.matches(artist,item.artists.map { it.name }) }
-            .map(SongItem::toAutomaticSong).distinctBy { it.id }.take(20)
+            .map(SongItem::toAutomaticSong).distinctBy { it.id }.shuffled().take(20)
             .also { check(it.isNotEmpty()) { "Nessun brano per questo artista" } }
     }
 
