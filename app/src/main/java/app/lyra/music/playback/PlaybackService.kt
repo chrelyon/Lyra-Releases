@@ -40,6 +40,7 @@ import app.lyra.music.core.model.DiscoverySnapshot
 import app.lyra.music.core.model.Playlist
 import app.lyra.music.core.model.PlaylistContent
 import app.lyra.music.core.model.Song
+import app.lyra.music.core.model.DiscoverMenuCatalog
 import app.lyra.music.local.LocalMediaAccess
 import app.lyra.music.local.LocalMediaRepository
 import app.lyra.music.youtube.auth.YouTubeAuthorizationManager
@@ -528,43 +529,51 @@ class PlaybackService : MediaLibraryService() {
                 return future
             }
 
-            if (parentId == AUTO_DISCOVER_ROOT_ID) {
+            if (parentId == AUTO_DISCOVER_ROOT_ID || parentId == AUTO_DISCOVER_ROOT_ID_LEGACY) {
                 val items = buildList {
-                    // Scorciatoia immediata, senza aggiungere una quinta tab Android Auto.
-                    PersonalizedMixEngine.summaries()
-                        .firstOrNull { it.id == PersonalizedMixEngine.DAILY_ID }
-                        ?.let(::buildForYouMixMediaItem)
-                        ?.let(::add)
-                    add(buildAutomaticPlaylistRootMediaItem())
-                    add(buildForYouRootMediaItem())
-                    addAll(musicRepository.getDiscoveryFolders().map(::buildDiscoverFolderMediaItem))
+                    DiscoverMenuCatalog.rootItems.forEach { entry ->
+                        when (entry.id) {
+                            DiscoverMenuCatalog.AUTOMATIC_ID ->
+                                add(buildAutomaticPlaylistRootMediaItem())
+                            DiscoverMenuCatalog.DAILY_MIX_ID ->
+                                PersonalizedMixEngine.summaries()
+                                    .firstOrNull { it.id == DiscoverMenuCatalog.DAILY_MIX_ID }
+                                    ?.let(::buildForYouMixMediaItem)
+                                    ?.let(::add)
+                            DiscoverMenuCatalog.NEW_RELEASES_ID ->
+                                add(buildDiscoverNewReleasesMediaItem())
+                        }
+                    }
                 }.forBrowser(session, browser, page, pageSize)
-                return Futures.immediateFuture(
-                    LibraryResult.ofItemList(items, params)
-                )
+                return Futures.immediateFuture(LibraryResult.ofItemList(items, params))
             }
 
-            if (parentId == AUTO_AUTOMATIC_ROOT_ID) {
-                val items = AutomaticPlaylistCatalog.presets
+            if (parentId == AUTO_AUTOMATIC_ROOT_ID || parentId == AUTO_AUTOMATIC_ROOT_ID_LEGACY) {
+                val items = DiscoverMenuCatalog.automaticPresets
+                    .mapNotNull { AutomaticPlaylistCatalog.preset(it.id) }
                     .map(::buildAutomaticPresetMediaItem)
                     .forBrowser(session, browser, page, pageSize)
-                return Futures.immediateFuture(
-                    LibraryResult.ofItemList(items, params)
-                )
+                return Futures.immediateFuture(LibraryResult.ofItemList(items, params))
+            }
+
+            // I vecchi nodi Scopri non sono più raggiungibili dal menu attuale.
+            // Rispondiamo vuoto anche ai client che ne conservano ancora gli ID.
+            if (
+                parentId == AUTO_FOR_YOU_ROOT_ID ||
+                parentId == AUTO_FOR_YOU_ROOT_ID_LEGACY ||
+                parentId == AUTO_DISCOVER_TOP_ID ||
+                parentId == AUTO_DISCOVER_PLAYLISTS_ID ||
+                parentId == AUTO_DISCOVER_GENRES_ID ||
+                parentId.startsWith(AUTO_DISCOVER_FOLDER_PREFIX) ||
+                parentId.startsWith(AUTO_DISCOVER_GROUP_PREFIX) ||
+                parentId.startsWith(AUTO_DISCOVER_GENRE_PREFIX)
+            ) {
+                return Futures.immediateFuture(LibraryResult.ofItemList(emptyList(), params))
             }
 
             if (parentId == AUTO_SAVED_AUTOMATIC_ROOT_ID) {
                 val items = SavedAutomaticPlaylistStore.asPlaylists()
                     .map(::buildPlaylistMediaItem)
-                    .forBrowser(session, browser, page, pageSize)
-                return Futures.immediateFuture(
-                    LibraryResult.ofItemList(items, params)
-                )
-            }
-
-            if (parentId == AUTO_FOR_YOU_ROOT_ID) {
-                val items = PersonalizedMixEngine.summaries()
-                    .mapNotNull(::buildForYouMixMediaItem)
                     .forBrowser(session, browser, page, pageSize)
                 return Futures.immediateFuture(
                     LibraryResult.ofItemList(items, params)
@@ -879,17 +888,17 @@ class PlaybackService : MediaLibraryService() {
             }
 
             when (mediaId) {
-                AUTO_DISCOVER_ROOT_ID -> return Futures.immediateFuture(
+                AUTO_DISCOVER_ROOT_ID, AUTO_DISCOVER_ROOT_ID_LEGACY -> return Futures.immediateFuture(
                     LibraryResult.ofItem(buildDiscoverMediaItem(), null)
                 )
-                AUTO_AUTOMATIC_ROOT_ID -> return Futures.immediateFuture(
+                AUTO_AUTOMATIC_ROOT_ID, AUTO_AUTOMATIC_ROOT_ID_LEGACY -> return Futures.immediateFuture(
                     LibraryResult.ofItem(buildAutomaticPlaylistRootMediaItem(), null)
                 )
                 AUTO_SAVED_AUTOMATIC_ROOT_ID -> return Futures.immediateFuture(
                     LibraryResult.ofItem(buildSavedAutomaticRootMediaItem(), null)
                 )
-                AUTO_FOR_YOU_ROOT_ID -> return Futures.immediateFuture(
-                    LibraryResult.ofItem(buildForYouRootMediaItem(), null)
+                AUTO_FOR_YOU_ROOT_ID, AUTO_FOR_YOU_ROOT_ID_LEGACY -> return Futures.immediateFuture(
+                    LibraryResult.ofItem(buildDiscoverMediaItem(), null)
                 )
                 AUTO_HISTORY_ROOT_ID -> return Futures.immediateFuture(
                     LibraryResult.ofItem(buildHistoryRootMediaItem(), null)
@@ -940,50 +949,25 @@ class PlaybackService : MediaLibraryService() {
                 )
             }
 
-            if (mediaId.startsWith(AUTO_DISCOVER_FOLDER_PREFIX)) {
-                val folderId = Uri.decode(mediaId.removePrefix(AUTO_DISCOVER_FOLDER_PREFIX))
-                val folder = musicRepository.getDiscoveryFolders()
-                    .firstOrNull { it.id == folderId }
-                    ?: return Futures.immediateFuture(
-                        LibraryResult.ofItem(buildDiscoverMediaItem(), null)
-                    )
-                return Futures.immediateFuture(
-                    LibraryResult.ofItem(buildDiscoverFolderMediaItem(folder), null)
-                )
+            if (
+                mediaId == AUTO_DISCOVER_TOP_ID ||
+                mediaId == AUTO_DISCOVER_PLAYLISTS_ID ||
+                mediaId == AUTO_DISCOVER_GENRES_ID ||
+                mediaId.startsWith(AUTO_DISCOVER_FOLDER_PREFIX) ||
+                mediaId.startsWith(AUTO_DISCOVER_GENRE_PREFIX)
+            ) {
+                return Futures.immediateFuture(LibraryResult.ofItem(buildDiscoverMediaItem(), null))
             }
 
             if (mediaId.startsWith(AUTO_DISCOVER_GROUP_PREFIX)) {
                 val key = Uri.decode(mediaId.removePrefix(AUTO_DISCOVER_GROUP_PREFIX))
                 val (folderId, groupId) = parseDiscoverGroupKey(key)
-                    ?: return Futures.immediateFuture(
-                        LibraryResult.ofItem(buildDiscoverMediaItem(), null)
-                    )
-                val summary = musicRepository.getDiscoveryGroups(folderId)
-                    .firstOrNull { it.id == groupId }
-                    ?: return Futures.immediateFuture(
-                        LibraryResult.ofItem(buildDiscoverMediaItem(), null)
-                    )
-                val cachedGroup = discoveryGroupCache[buildDiscoverGroupKey(folderId, groupId)]
+                    ?: return Futures.immediateFuture(LibraryResult.ofItem(buildDiscoverMediaItem(), null))
+                val isNewReleases = folderId == DiscoverMenuCatalog.NEW_RELEASES_FOLDER_ID &&
+                    groupId == DiscoverMenuCatalog.NEW_RELEASES_GROUP_ID
                 return Futures.immediateFuture(
                     LibraryResult.ofItem(
-                        cachedGroup?.let { buildDiscoverGroupMediaItem(folderId, it) }
-                            ?: buildDiscoverGroupMediaItem(folderId, summary),
-                        null,
-                    )
-                )
-            }
-
-            if (mediaId.startsWith(AUTO_DISCOVER_GENRE_PREFIX)) {
-                val genreId = Uri.decode(mediaId.removePrefix(AUTO_DISCOVER_GENRE_PREFIX))
-                val genre = discoveryCache?.genres?.firstOrNull { it.id == genreId }
-                return Futures.immediateFuture(
-                    LibraryResult.ofItem(
-                        buildDiscoverGenreMediaItem(
-                            genreId = genreId,
-                            title = genre?.title ?: genreId.replaceFirstChar { it.uppercase() },
-                            playlistCount = genre?.playlists?.size ?: 0,
-                            artworkUrl = genre?.playlists?.firstNotNullOfOrNull { it.thumbnailUrl },
-                        ),
+                        if (isNewReleases) buildDiscoverNewReleasesMediaItem() else buildDiscoverMediaItem(),
                         null,
                     )
                 )
@@ -1159,7 +1143,8 @@ class PlaybackService : MediaLibraryService() {
             val requested = mediaItems[requestedIndex]
             val isKnownBrowserSelection = autoSongContexts.containsKey(requested.mediaId) ||
                 requested.mediaId.startsWith(AUTO_FOR_YOU_MIX_PREFIX) ||
-                requested.mediaId.startsWith(AUTO_AUTOMATIC_PRESET_PREFIX)
+                requested.mediaId.startsWith(AUTO_AUTOMATIC_PRESET_PREFIX) ||
+                requested.mediaId.startsWith(AUTO_DISCOVER_GROUP_PREFIX)
             val requestedSearchQuery = requested.requestMetadata.searchQuery
                 ?.trim()
                 ?.takeIf { it.isNotBlank() }
@@ -1757,8 +1742,8 @@ class PlaybackService : MediaLibraryService() {
         .setMediaId(AUTO_AUTOMATIC_ROOT_ID)
         .setMediaMetadata(
             MediaMetadata.Builder()
-                .setTitle("Playlist Automatica")
-                .setSubtitle("Scegli mood o genere e lascia continuare Lyra")
+                .setTitle(DiscoverMenuCatalog.rootItems.first { it.id == DiscoverMenuCatalog.AUTOMATIC_ID }.title)
+                .setSubtitle(DiscoverMenuCatalog.rootItems.first { it.id == DiscoverMenuCatalog.AUTOMATIC_ID }.subtitle)
                 .setArtworkUri(autoArtworkUri(null, R.drawable.auto_art_automatic))
                 .setExtras(compactFolderStyleExtras())
                 .setIsBrowsable(true)
@@ -1801,23 +1786,28 @@ class PlaybackService : MediaLibraryService() {
         val automatic = PersonalizedMixEngine.automaticSeed(mix.id)
         val localSongs = PersonalizedMixEngine.localSongs(mix.id)
         val songs = automatic?.first?.let(::listOf) ?: localSongs
-        val first = songs.firstOrNull() ?: return null
+        val first = songs.firstOrNull()
         val mediaId = AUTO_FOR_YOU_MIX_PREFIX + Uri.encode(mix.id)
         val queueTitle = automatic?.second ?: mix.title
-        autoSongContexts[mediaId] = AutoSongContext(
-            song = first,
-            queueTitle = queueTitle,
-            queueSongs = songs,
-            index = 0,
-            automaticSeed = automatic != null,
-        )
+        if (first != null) {
+            autoSongContexts[mediaId] = AutoSongContext(
+                song = first,
+                queueTitle = queueTitle,
+                queueSongs = songs,
+                index = 0,
+                automaticSeed = automatic != null,
+            )
+        }
+        val menuSubtitle = if (mix.id == DiscoverMenuCatalog.DAILY_MIX_ID) {
+            DiscoverMenuCatalog.rootItems.first { it.id == DiscoverMenuCatalog.DAILY_MIX_ID }.subtitle
+        } else mix.subtitle
         return MediaItem.Builder()
             .setMediaId(mediaId)
             .setMediaMetadata(
                 MediaMetadata.Builder()
                     .setTitle(if (mix.id == PersonalizedMixEngine.DAILY_ID) "Mix per me" else mix.title)
-                    .setSubtitle(mix.subtitle)
-                    .setArtworkUri(autoArtworkUri(first.thumbnailUrl, R.drawable.auto_art_for_you))
+                    .setSubtitle(menuSubtitle)
+                    .setArtworkUri(autoArtworkUri(first?.thumbnailUrl, R.drawable.auto_art_for_you))
                     .setIsBrowsable(false)
                     .setIsPlayable(true)
                     .build()
@@ -1930,6 +1920,7 @@ class PlaybackService : MediaLibraryService() {
         title: String,
         playlistCount: Int?,
         artworkUrl: String?,
+        subtitleOverride: String? = null,
     ): MediaItem = MediaItem.Builder()
         .setMediaId(
             AUTO_DISCOVER_GROUP_PREFIX +
@@ -1939,7 +1930,7 @@ class PlaybackService : MediaLibraryService() {
             MediaMetadata.Builder()
                 .setTitle(title)
                 .setSubtitle(
-                    if (DiscoveryDirectMixRepository.isDirectGroup(folderId, groupId)) {
+                    subtitleOverride ?: if (DiscoveryDirectMixRepository.isDirectGroup(folderId, groupId)) {
                         "Riproduci direttamente il mix Lyra"
                     } else {
                         playlistCount?.let { count ->
@@ -1988,7 +1979,7 @@ class PlaybackService : MediaLibraryService() {
         .setMediaMetadata(
             MediaMetadata.Builder()
                 .setTitle("Scopri")
-                .setSubtitle("Novità, mood, generi, attività, decenni, Italia & Europa")
+                .setSubtitle(DiscoverMenuCatalog.rootItems.joinToString(" · ") { it.title })
                 .setArtworkUri(autoArtworkUri(null, R.drawable.auto_art_discover))
                 .setExtras(compactFolderStyleExtras())
                 .setIsBrowsable(true)
@@ -1996,6 +1987,18 @@ class PlaybackService : MediaLibraryService() {
                 .build()
         )
         .build()
+
+    private fun buildDiscoverNewReleasesMediaItem(): MediaItem {
+        val item = DiscoverMenuCatalog.rootItems.first { it.id == DiscoverMenuCatalog.NEW_RELEASES_ID }
+        return buildDiscoverGroupMediaItem(
+            folderId = DiscoverMenuCatalog.NEW_RELEASES_FOLDER_ID,
+            groupId = DiscoverMenuCatalog.NEW_RELEASES_GROUP_ID,
+            title = item.title,
+            playlistCount = null,
+            artworkUrl = null,
+            subtitleOverride = item.subtitle,
+        )
+    }
 
     private fun buildDiscoverTopMediaItem(): MediaItem = MediaItem.Builder()
         .setMediaId(AUTO_DISCOVER_TOP_ID)
@@ -3699,10 +3702,13 @@ class PlaybackService : MediaLibraryService() {
         const val AUTO_AUTH_WAIT_MS = 8_000L
         const val AUTO_LIBRARY_ROOT_ID = "lyra:auto:root"
         const val AUTO_ALL_PLAYLISTS_ID = "lyra:auto:all-playlists"
-        const val AUTO_DISCOVER_ROOT_ID = "lyra:auto:discover"
-        const val AUTO_AUTOMATIC_ROOT_ID = "lyra:auto:automatic"
+        const val AUTO_DISCOVER_ROOT_ID = "lyra:auto:discover:v2"
+        const val AUTO_DISCOVER_ROOT_ID_LEGACY = "lyra:auto:discover"
+        const val AUTO_AUTOMATIC_ROOT_ID = "lyra:auto:automatic:v2"
+        const val AUTO_AUTOMATIC_ROOT_ID_LEGACY = "lyra:auto:automatic"
         const val AUTO_SAVED_AUTOMATIC_ROOT_ID = "lyra:auto:automatic:saved"
-        const val AUTO_FOR_YOU_ROOT_ID = "lyra:auto:for-you"
+        const val AUTO_FOR_YOU_ROOT_ID = "lyra:auto:for-you:v2"
+        const val AUTO_FOR_YOU_ROOT_ID_LEGACY = "lyra:auto:for-you"
         const val AUTO_FOR_YOU_MIX_PREFIX = "lyra:auto:for-you:mix:"
         const val AUTO_HISTORY_ROOT_ID = "lyra:auto:history"
         const val AUTO_HISTORY_ITEM_PREFIX = "lyra:auto:history:item:"

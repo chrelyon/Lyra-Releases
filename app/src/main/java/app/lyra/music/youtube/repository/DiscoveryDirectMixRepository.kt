@@ -1,6 +1,7 @@
 package app.lyra.music.youtube.repository
 
 import app.lyra.music.core.model.Song
+import app.lyra.music.core.model.DiscoverMenuCatalog
 import app.lyra.music.personalization.RecommendationEngine
 import com.metrolist.innertube.YouTube
 import com.metrolist.innertube.models.SongItem
@@ -22,8 +23,14 @@ class DiscoveryDirectMixRepository {
     private val music = YouTubeMusicRepository()
 
     suspend fun build(folderId: String, groupId: String): Result {
-        val title = music.getDiscoveryGroups(folderId)
-            .firstOrNull { it.id == groupId }?.title ?: "Scopri"
+        val title = if (
+            folderId == DiscoverMenuCatalog.NEW_RELEASES_FOLDER_ID &&
+            groupId == DiscoverMenuCatalog.NEW_RELEASES_GROUP_ID
+        ) {
+            "Novità"
+        } else {
+            music.getDiscoveryGroups(folderId).firstOrNull { it.id == groupId }?.title ?: "Scopri"
+        }
         val selected = when (folderId) {
             "decenni" -> decadeSongs(groupId)
             "novita" -> NewReleaseDiscovery.songsForGroup(groupId)
