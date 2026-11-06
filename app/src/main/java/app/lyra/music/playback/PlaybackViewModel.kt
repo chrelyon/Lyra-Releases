@@ -433,41 +433,29 @@ class PlaybackViewModel(
         }
     }
 
-    /** Avvia uno dei mix locali della sezione Scopri -> Per te. */
-    fun startPersonalizedMix(mixId: String) {
-        val automatic = PersonalizedMixEngine.automaticSeed(mixId)
-        if (automatic != null) {
-            val (seed, title) = automatic
-            val generation = ++automaticGeneration
-            AutomaticPlaylistManager.clear()
-            _automaticPlaylistLoading.value = true
-            _automaticPlaylistError.value = null
-            viewModelScope.launch {
-                runCatching { AutomaticPlaylistManager.startFromSeed(seed, title) }
-                    .onSuccess { result ->
-                        if (generation == automaticGeneration) {
-                            playQueue(
-                                songs = result.songs,
-                                startIndex = result.songs.indexOfFirst { it.id == seed.id }.coerceAtLeast(0),
-                                queueTitle = result.title,
-                                preserveAutomaticSession = true,
-                            )
-                        }
+    /** Avvia "Mix per me" (home, Scopri e Android Auto usano lo stesso motore). */
+    fun startPersonalizedMix() {
+        val generation = ++automaticGeneration
+        _automaticPlaylistLoading.value = true
+        _automaticPlaylistError.value = null
+        viewModelScope.launch {
+            runCatching { PersonalizedMixEngine.build() }
+                .onSuccess { result ->
+                    if (generation == automaticGeneration) {
+                        playQueue(
+                            songs = result.songs,
+                            startIndex = 0,
+                            queueTitle = result.title,
+                            preserveAutomaticSession = true,
+                        )
                     }
-                    .onFailure { error ->
-                        _automaticPlaylistError.value = error.message ?: "Impossibile creare il mix personalizzato"
+                }
+                .onFailure { error ->
+                    if (generation == automaticGeneration) {
+                        _automaticPlaylistError.value = error.message ?: "Impossibile creare il Mix per me"
                     }
-                _automaticPlaylistLoading.value = false
-            }
-            return
-        }
-
-        val songs = PersonalizedMixEngine.localSongs(mixId)
-        if (songs.isNotEmpty()) {
-            val title = PersonalizedMixEngine.summaries().firstOrNull { it.id == mixId }?.title ?: "Per te"
-            playQueue(songs = songs, startIndex = 0, queueTitle = title)
-        } else {
-            _automaticPlaylistError.value = "Non ci sono ancora abbastanza ascolti per questo mix."
+                }
+            if (generation == automaticGeneration) _automaticPlaylistLoading.value = false
         }
     }
 

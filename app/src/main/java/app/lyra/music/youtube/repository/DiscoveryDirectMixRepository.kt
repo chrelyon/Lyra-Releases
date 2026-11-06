@@ -26,9 +26,9 @@ class DiscoveryDirectMixRepository {
             .firstOrNull { it.id == groupId }?.title ?: "Scopri"
         val selected = when (folderId) {
             "decenni" -> decadeSongs(groupId)
-            "novita" -> NewReleaseDiscovery.songsForGroup(groupId)
-            "nazioni" -> if (groupId == "italia") italianSongs() else emptyList()
-            "mood", "attivita" -> playlistSourceSongs(folderId, groupId)
+            "novita" -> NewReleaseDiscovery.mixedSongs()
+            "italiane" -> italianSongs()
+            "mood" -> playlistSourceSongs(folderId, groupId)
             else -> emptyList()
         }
         if (selected.isEmpty()) throw IllegalStateException(
@@ -47,9 +47,8 @@ class DiscoveryDirectMixRepository {
 
     private fun tag(folder: String, group: String): String? = when (folder) {
         "mood" -> group
-        "attivita" -> "energia"
         "novita" -> "novita"
-        "nazioni" -> "italia"
+        "italiane" -> "italia"
         "decenni" -> group
         else -> null
     }
@@ -91,9 +90,11 @@ class DiscoveryDirectMixRepository {
             "90s" -> 1990
             "2000s" -> 2000
             "2010s" -> 2010
+            "2020s" -> 2020
             else -> throw IllegalArgumentException("Decennio non riconosciuto: $groupId")
         }
-        val sampledYears = (decadeStart..decadeStart + 9).shuffled().take(5)
+        val thisYear = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
+        val sampledYears = (decadeStart..minOf(decadeStart + 9, thisYear)).shuffled().take(5)
         val queries = sampledYears.flatMap { year ->
             listOf("canzoni italiane $year", "top songs international $year")
         }.shuffled().take(6)
@@ -108,7 +109,6 @@ class DiscoveryDirectMixRepository {
                 !it.isEpisode && it.id.isNotBlank() && it.artists.any { artist -> artist.name.isNotBlank() }
             }
             .distinctBy { it.id }.take(MAX_ALBUM_CHECKS).toList()
-        val thisYear = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
         return coroutineScope {
             candidates.map { candidate ->
                 async {
@@ -154,9 +154,7 @@ class DiscoveryDirectMixRepository {
         private const val MAX_ALBUM_CHECKS = 36
 
         fun isDirectGroup(folder: String, group: String): Boolean = when (folder) {
-            "decenni", "novita", "mood" -> true
-            "attivita" -> group == "workout"
-            "nazioni" -> group == "italia"
+            "decenni", "novita", "mood", "italiane" -> true
             else -> false
         }
     }

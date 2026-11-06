@@ -41,22 +41,6 @@ internal object NewReleaseDiscovery {
             Definition("hit-global-pop", "Hit straniere · Pop", "new international pop hits $year"),
             Definition("hit-global-dance", "Hit straniere · Dance", "new global dance hits $year"),
         )
-        "nuove-uscite" -> listOf(
-            Definition("italia", "Nuove uscite · Italia", "nuove uscite musica italiana $year"),
-            Definition("internazionali", "Nuove uscite · Internazionali", "new music releases $year international"),
-        )
-        "hit-momento" -> listOf(
-            Definition("pop", "Hit recenti · Pop", "new pop songs $year releases"),
-            Definition("dance", "Hit recenti · Dance", "new dance electronic songs $year releases"),
-        )
-        "novita-italiane" -> listOf(
-            Definition("pop-italia", "Novità italiane · Pop", "nuove canzoni pop italiane $year"),
-            Definition("rap-italia", "Novità italiane · Rap e Indie", "nuove canzoni rap indie italiane $year"),
-        )
-        "virali" -> listOf(
-            Definition("virali-italia", "Virali recenti · Italia", "canzoni virali italiane nuove $year"),
-            Definition("virali-global", "Virali recenti · Internazionali", "new trending viral songs $year"),
-        )
         else -> emptyList()
     }
 
@@ -118,6 +102,22 @@ internal object NewReleaseDiscovery {
             ?: return null
         return buildContent(id, definition, year).takeIf { it.songs.size >= MIN_TRACKS }
             ?.also { contentCache[id] = CachedContent(it, System.currentTimeMillis()) }
+    }
+
+    /** Novità: hit italiane e straniere dell'anno corrente, alternate. */
+    suspend fun mixedSongs(): List<Song> {
+        val (italian, foreign) = coroutineScope {
+            val italianHits = async { songsForGroup("hit-italiane") }
+            val foreignHits = async { songsForGroup("hit-straniere") }
+            italianHits.await() to foreignHits.await()
+        }
+        val interleaved = buildList {
+            for (i in 0 until maxOf(italian.size, foreign.size)) {
+                italian.getOrNull(i)?.let(::add)
+                foreign.getOrNull(i)?.let(::add)
+            }
+        }
+        return interleaved.distinctBy { it.id }.take(40)
     }
 
     /** Le hit sono una coda di brani, non una schermata di playlist YTM. */

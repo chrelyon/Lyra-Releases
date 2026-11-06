@@ -33,7 +33,6 @@ import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaLibraryService.LibraryParams
 import androidx.media3.session.MediaLibraryService.MediaLibrarySession
 import androidx.media3.session.MediaConstants
-import app.lyra.music.core.model.DiscoveryFolderSummary
 import app.lyra.music.core.model.DiscoveryGroupSection
 import app.lyra.music.core.model.DiscoveryGroupSummary
 import app.lyra.music.core.model.Playlist
@@ -50,6 +49,7 @@ import app.lyra.music.personalization.PersonalizedMixEngine
 import app.lyra.music.personalization.PersonalizationSettings
 import app.lyra.music.personalization.RecommendationEngine
 import app.lyra.music.youtube.repository.YouTubeMusicRepository
+import app.lyra.music.youtube.repository.DiscoverMenu
 import app.lyra.music.youtube.repository.DiscoveryDirectMixRepository
 import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
@@ -527,25 +527,17 @@ class PlaybackService : MediaLibraryService() {
             }
 
             if (parentId == AUTO_DISCOVER_ROOT_ID) {
-                val folders = musicRepository.getDiscoveryFolders()
-                val items = buildList {
-                    // Stesso ordine e stessi nodi della schermata Scopri Android:
-                    // Playlist Automatica, Per te e le cartelle del DiscoveryCatalog.
-                    add(buildAutomaticPlaylistRootMediaItem())
-                    add(buildForYouRootMediaItem())
-                    addAll(folders.map(::buildDiscoverFolderMediaItem))
-                }.forBrowser(session, browser, page, pageSize)
-                Log.d(
-                    "LYRA_AUTO",
-                    "browseDiscoverRoot items=${items.size} folders=${folders.joinToString(",") { it.id }}"
-                )
+                // Stesse cinque voci, nello stesso ordine, della schermata Scopri dell'app.
+                val items = DiscoverMenu.entries
+                    .map(::buildDiscoverEntryMediaItem)
+                    .forBrowser(session, browser, page, pageSize)
                 return Futures.immediateFuture(
                     LibraryResult.ofItemList(items, params)
                 )
             }
 
             if (parentId == AUTO_AUTOMATIC_ROOT_ID) {
-                val items = AutomaticPlaylistCatalog.presets
+                val items = AutomaticPlaylistCatalog.menuPresets
                     .map(::buildAutomaticPresetMediaItem)
                     .forBrowser(session, browser, page, pageSize)
                 return Futures.immediateFuture(
@@ -556,15 +548,6 @@ class PlaybackService : MediaLibraryService() {
             if (parentId == AUTO_SAVED_AUTOMATIC_ROOT_ID) {
                 val items = SavedAutomaticPlaylistStore.asPlaylists()
                     .map(::buildPlaylistMediaItem)
-                    .forBrowser(session, browser, page, pageSize)
-                return Futures.immediateFuture(
-                    LibraryResult.ofItemList(items, params)
-                )
-            }
-
-            if (parentId == AUTO_FOR_YOU_ROOT_ID) {
-                val items = PersonalizedMixEngine.summaries()
-                    .map(::buildForYouMixMediaItem)
                     .forBrowser(session, browser, page, pageSize)
                 return Futures.immediateFuture(
                     LibraryResult.ofItemList(items, params)
@@ -800,8 +783,8 @@ class PlaybackService : MediaLibraryService() {
                 AUTO_SAVED_AUTOMATIC_ROOT_ID -> return Futures.immediateFuture(
                     LibraryResult.ofItem(buildSavedAutomaticRootMediaItem(), null)
                 )
-                AUTO_FOR_YOU_ROOT_ID -> return Futures.immediateFuture(
-                    LibraryResult.ofItem(buildForYouRootMediaItem(), null)
+                AUTO_MIX_ID -> return Futures.immediateFuture(
+                    LibraryResult.ofItem(buildMixMediaItem(), null)
                 )
                 AUTO_HISTORY_ROOT_ID -> return Futures.immediateFuture(
                     LibraryResult.ofItem(buildHistoryRootMediaItem(), null)
@@ -845,13 +828,12 @@ class PlaybackService : MediaLibraryService() {
 
             if (mediaId.startsWith(AUTO_DISCOVER_FOLDER_PREFIX)) {
                 val folderId = Uri.decode(mediaId.removePrefix(AUTO_DISCOVER_FOLDER_PREFIX))
-                val folder = musicRepository.getDiscoveryFolders()
-                    .firstOrNull { it.id == folderId }
+                val folder = DiscoverMenu.entry(folderId)
                     ?: return Futures.immediateFuture(
                         LibraryResult.ofItem(buildDiscoverMediaItem(), null)
                     )
                 return Futures.immediateFuture(
-                    LibraryResult.ofItem(buildDiscoverFolderMediaItem(folder), null)
+                    LibraryResult.ofItem(buildDiscoverEntryMediaItem(folder), null)
                 )
             }
 
@@ -874,15 +856,6 @@ class PlaybackService : MediaLibraryService() {
                         null,
                     )
                 )
-            }
-
-            if (mediaId.startsWith(AUTO_FOR_YOU_MIX_PREFIX)) {
-                val mixId = Uri.decode(mediaId.removePrefix(AUTO_FOR_YOU_MIX_PREFIX))
-                val mix = PersonalizedMixEngine.summaries().firstOrNull { it.id == mixId }
-                val item = mix?.let(::buildForYouMixMediaItem)
-                if (item != null) {
-                    return Futures.immediateFuture(LibraryResult.ofItem(item, null))
-                }
             }
 
             if (mediaId.startsWith(AUTO_HISTORY_ITEM_PREFIX)) {
@@ -1040,7 +1013,7 @@ class PlaybackService : MediaLibraryService() {
                 ?: 0
             val requested = mediaItems[requestedIndex]
             val isKnownBrowserSelection = autoSongContexts.containsKey(requested.mediaId) ||
-                requested.mediaId.startsWith(AUTO_FOR_YOU_MIX_PREFIX) ||
+                requested.mediaId == AUTO_MIX_ID ||
                 requested.mediaId.startsWith(AUTO_AUTOMATIC_PRESET_PREFIX)
             val requestedSearchQuery = requested.requestMetadata.searchQuery
                 ?.trim()
@@ -1639,8 +1612,8 @@ class PlaybackService : MediaLibraryService() {
         .setMediaId(AUTO_AUTOMATIC_ROOT_ID)
         .setMediaMetadata(
             MediaMetadata.Builder()
-                .setTitle("Playlist Automatica")
-                .setSubtitle("Scegli mood o genere e lascia continuare Lyra")
+                .setTitle("Playlist automatiche")
+                .setSubtitle(DiscoverMenu.entry(DiscoverMenu.AUTOMATIC_ID)?.subtitle)
                 .setArtworkUri(autoArtworkUri(null, R.drawable.auto_art_automatic))
                 .setExtras(compactFolderStyleExtras())
                 .setIsBrowsable(true)
@@ -1663,51 +1636,18 @@ class PlaybackService : MediaLibraryService() {
         )
         .build()
 
-    private fun buildForYouRootMediaItem(): MediaItem = MediaItem.Builder()
-        .setMediaId(AUTO_FOR_YOU_ROOT_ID)
+    private fun buildMixMediaItem(): MediaItem = MediaItem.Builder()
+        .setMediaId(AUTO_MIX_ID)
         .setMediaMetadata(
             MediaMetadata.Builder()
-                .setTitle("Per te")
-                .setSubtitle("Mix creati localmente dai tuoi ascolti")
+                .setTitle("Mix per me")
+                .setSubtitle(DiscoverMenu.entry(DiscoverMenu.MIX_ID)?.subtitle)
                 .setArtworkUri(autoArtworkUri(null, R.drawable.auto_art_for_you))
-                .setExtras(compactFolderStyleExtras())
-                .setIsBrowsable(true)
-                .setIsPlayable(false)
+                .setIsBrowsable(false)
+                .setIsPlayable(true)
                 .build()
         )
         .build()
-
-    private fun buildForYouMixMediaItem(
-        mix: PersonalizedMixEngine.MixSummary,
-    ): MediaItem {
-        val automatic = PersonalizedMixEngine.automaticSeed(mix.id)
-        val localSongs = PersonalizedMixEngine.localSongs(mix.id)
-        val songs = automatic?.first?.let(::listOf) ?: localSongs
-        val first = songs.firstOrNull()
-        val mediaId = AUTO_FOR_YOU_MIX_PREFIX + Uri.encode(mix.id)
-        val queueTitle = automatic?.second ?: mix.title
-        if (first != null) {
-            autoSongContexts[mediaId] = AutoSongContext(
-                song = first,
-                queueTitle = queueTitle,
-                queueSongs = songs,
-                index = 0,
-                automaticSeed = automatic != null,
-            )
-        }
-        return MediaItem.Builder()
-            .setMediaId(mediaId)
-            .setMediaMetadata(
-                MediaMetadata.Builder()
-                    .setTitle(if (mix.id == PersonalizedMixEngine.DAILY_ID) "Mix per me" else mix.title)
-                    .setSubtitle(mix.subtitle)
-                    .setArtworkUri(autoArtworkUri(first?.thumbnailUrl, R.drawable.auto_art_for_you))
-                    .setIsBrowsable(false)
-                    .setIsPlayable(first != null)
-                    .build()
-            )
-            .build()
-    }
 
     private fun buildHistoryRootMediaItem(): MediaItem = MediaItem.Builder()
         .setMediaId(AUTO_HISTORY_ROOT_ID)
@@ -1765,26 +1705,30 @@ class PlaybackService : MediaLibraryService() {
         )
         .build()
 
-    private fun buildDiscoverFolderMediaItem(
-        folder: DiscoveryFolderSummary,
-    ): MediaItem = MediaItem.Builder()
-        .setMediaId(AUTO_DISCOVER_FOLDER_PREFIX + Uri.encode(folder.id))
-        .setMediaMetadata(
-            MediaMetadata.Builder()
-                .setTitle(folder.title)
-                .setSubtitle("${folder.subtitle} · ${folder.groupCount} categorie")
-                .setArtworkUri(
-                    autoArtworkUri(
-                        null,
-                        discoverFolderArtworkResId(folder.id),
-                    )
-                )
-                .setExtras(compactFolderStyleExtras())
-                .setIsBrowsable(true)
-                .setIsPlayable(false)
-                .build()
+    private fun buildDiscoverEntryMediaItem(entry: DiscoverMenu.Entry): MediaItem = when (entry.kind) {
+        DiscoverMenu.Kind.AUTOMATIC_FOLDER -> buildAutomaticPlaylistRootMediaItem()
+        DiscoverMenu.Kind.MIX -> buildMixMediaItem()
+        DiscoverMenu.Kind.DIRECT -> buildDiscoverGroupMediaItem(
+            folderId = entry.id,
+            groupId = requireNotNull(entry.groupId),
+            title = entry.title,
+            playlistCount = null,
+            artworkUrl = null,
         )
-        .build()
+        DiscoverMenu.Kind.DECADES_FOLDER -> MediaItem.Builder()
+            .setMediaId(AUTO_DISCOVER_FOLDER_PREFIX + Uri.encode(entry.id))
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setTitle(entry.title)
+                    .setSubtitle(entry.subtitle)
+                    .setArtworkUri(autoArtworkUri(null, discoverFolderArtworkResId(entry.id)))
+                    .setExtras(compactFolderStyleExtras())
+                    .setIsBrowsable(true)
+                    .setIsPlayable(false)
+                    .build()
+            )
+            .build()
+    }
 
     private fun buildDiscoverGroupMediaItem(
         folderId: String,
@@ -1850,11 +1794,8 @@ class PlaybackService : MediaLibraryService() {
 
     private fun discoverFolderArtworkResId(folderId: String): Int = when (folderId) {
         "novita" -> R.drawable.auto_art_discover_new
-        "mood" -> R.drawable.auto_art_discover_mood
-        "generi" -> R.drawable.auto_art_discover_genres
-        "attivita" -> R.drawable.auto_art_discover_activity
         "decenni" -> R.drawable.auto_art_discover_decades
-        "nazioni" -> R.drawable.auto_art_discover_europe
+        "italiane" -> R.drawable.auto_art_discover_europe
         else -> R.drawable.auto_art_discover
     }
 
@@ -2314,33 +2255,14 @@ class PlaybackService : MediaLibraryService() {
             }
         }
 
-        if (mediaId.startsWith(AUTO_FOR_YOU_MIX_PREFIX)) {
-            val mixId = Uri.decode(mediaId.removePrefix(AUTO_FOR_YOU_MIX_PREFIX))
-            val mix = PersonalizedMixEngine.summaries().firstOrNull { it.id == mixId }
-                ?: throw IllegalArgumentException("Mix Lyra non riconosciuto")
-            val automatic = PersonalizedMixEngine.automaticSeed(mixId)
-            if (automatic != null) {
-                // Lo stesso motore usato dal pulsante Mix per me sul telefono.
-                val (seed, title) = automatic
-                val result = AutomaticPlaylistManager.startFromSeed(seed, title)
-                return AutoSongContext(
-                    song = seed,
-                    queueTitle = result.title,
-                    queueSongs = result.songs,
-                    index = result.songs.indexOfFirst { it.id == seed.id }.coerceAtLeast(0),
-                    automaticSeed = true,
-                )
-            }
-            val songs = PersonalizedMixEngine.localSongs(mixId)
-            if (songs.isEmpty()) {
-                throw IllegalStateException("Ascolta altri brani su Lyra per creare ${mix.title}")
-            }
-            AutomaticPlaylistManager.clear()
+        if (mediaId == AUTO_MIX_ID) {
+            val result = PersonalizedMixEngine.build()
             return AutoSongContext(
-                song = songs.first(),
-                queueTitle = mix.title,
-                queueSongs = songs,
+                song = result.songs.first(),
+                queueTitle = result.title,
+                queueSongs = result.songs,
                 index = 0,
+                automaticSeed = true,
             )
         }
 
@@ -3517,8 +3439,7 @@ class PlaybackService : MediaLibraryService() {
         const val AUTO_DISCOVER_ROOT_ID = "lyra:auto:discover"
         const val AUTO_AUTOMATIC_ROOT_ID = "lyra:auto:automatic"
         const val AUTO_SAVED_AUTOMATIC_ROOT_ID = "lyra:auto:automatic:saved"
-        const val AUTO_FOR_YOU_ROOT_ID = "lyra:auto:for-you"
-        const val AUTO_FOR_YOU_MIX_PREFIX = "lyra:auto:for-you:mix:"
+        const val AUTO_MIX_ID = "lyra:auto:mix"
         const val AUTO_HISTORY_ROOT_ID = "lyra:auto:history"
         const val AUTO_HISTORY_ITEM_PREFIX = "lyra:auto:history:item:"
         const val AUTO_AUTOMATIC_PRESET_PREFIX = "lyra:auto:automatic:preset:"

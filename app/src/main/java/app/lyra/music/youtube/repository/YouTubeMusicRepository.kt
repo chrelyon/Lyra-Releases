@@ -1,7 +1,5 @@
 package app.lyra.music.youtube.repository
 
-import app.lyra.music.core.model.DiscoveryFolderContent
-import app.lyra.music.core.model.DiscoveryFolderSummary
 import app.lyra.music.core.model.DiscoveryGenreSection
 import app.lyra.music.core.model.DiscoveryGroupSection
 import app.lyra.music.core.model.DiscoveryGroupSummary
@@ -47,28 +45,13 @@ class YouTubeMusicRepository : MusicRepository {
     }
 
     /**
-     * Elenco immediato delle cartelle Scopri. Non effettua rete.
-     */
-    fun getDiscoveryFolders(): List<DiscoveryFolderSummary> {
-        val mode = DiscoverySettings.regionMode.value
-        return DiscoveryCatalog.folders.map { definition ->
-            DiscoveryFolderSummary(
-                id = definition.id,
-                title = DiscoveryCatalog.folderTitle(definition, mode),
-                subtitle = DiscoveryCatalog.folderSubtitle(definition, mode),
-                groupCount = DiscoveryCatalog.groupsFor(definition, mode).size,
-            )
-        }
-    }
-
-    /**
      * Elenco immediato dei gruppi presenti in una cartella. Utile ad Android Auto
      * per restituire metadata coerenti anche prima di aver caricato le playlist.
      */
     fun getDiscoveryGroups(folderId: String): List<DiscoveryGroupSummary> =
         DiscoveryCatalog.folders
             .firstOrNull { it.id == folderId }
-            ?.let { folder -> DiscoveryCatalog.groupsFor(folder, DiscoverySettings.regionMode.value) }
+            ?.let { folder -> DiscoveryCatalog.groupsFor(folder) }
             .orEmpty()
             .map { group ->
                 val key = "$folderId/${group.id}"
@@ -82,49 +65,6 @@ class YouTubeMusicRepository : MusicRepository {
             }
 
     /**
-     * Carica una sola cartella Scopri alla volta. In questo modo la nuova libreria
-     * puo' essere molto piu' ricca senza trasformare l'apertura di Scopri in una
-     * raffica di decine di query. Ogni cartella ha cache indipendente di 30 minuti.
-     */
-    suspend fun getDiscoveryFolder(
-        folderId: String,
-        forceRefresh: Boolean = false,
-    ): DiscoveryFolderContent {
-        val definition = DiscoveryCatalog.folders.firstOrNull { it.id == folderId }
-            ?: throw IllegalArgumentException("Cartella Scopri sconosciuta: $folderId")
-
-        val now = System.currentTimeMillis()
-        if (!forceRefresh) {
-            cachedDiscoveryFolders[folderId]
-                ?.takeIf { now - it.loadedAtMs < DISCOVERY_CACHE_TTL_MS }
-                ?.let { return it.content }
-        }
-
-        val mode = DiscoverySettings.regionMode.value
-        val groups = coroutineScope {
-            DiscoveryCatalog.groupsFor(definition, mode).map { groupDefinition ->
-                async {
-                    getDiscoveryGroup(
-                        folderId = folderId,
-                        groupId = groupDefinition.id,
-                        forceRefresh = forceRefresh,
-                    )
-                }
-            }.awaitAll()
-        }
-
-        val content = DiscoveryFolderContent(
-            id = definition.id,
-            title = DiscoveryCatalog.folderTitle(definition, mode),
-            subtitle = DiscoveryCatalog.folderSubtitle(definition, mode),
-            groups = groups,
-        )
-        cachedDiscoveryFolders[folderId] = CachedDiscoveryFolder(content, now)
-        return content
-    }
-
-
-    /**
      * Carica un singolo gruppo Scopri. Android Auto usa questo percorso per non
      * scaricare tutti i generi/mood quando l'utente entra soltanto in uno di essi.
      */
@@ -135,7 +75,7 @@ class YouTubeMusicRepository : MusicRepository {
     ): DiscoveryGroupSection {
         val folder = DiscoveryCatalog.folders.firstOrNull { it.id == folderId }
             ?: throw IllegalArgumentException("Cartella Scopri sconosciuta: $folderId")
-        val definition = DiscoveryCatalog.groupsFor(folder, DiscoverySettings.regionMode.value)
+        val definition = DiscoveryCatalog.groupsFor(folder)
             .firstOrNull { it.id == groupId }
             ?: throw IllegalArgumentException("Gruppo Scopri sconosciuto: $folderId/$groupId")
         val key = "$folderId/$groupId"
@@ -504,7 +444,6 @@ class YouTubeMusicRepository : MusicRepository {
         const val DISCOVER_MUSIC_PLAYLIST_PREFIX = "lyra-ytm:"
 
         fun clearDiscoveryCaches() {
-            cachedDiscoveryFolders.clear()
             cachedDiscoveryGroups.clear()
             cachedGenreSections = null
             cachedGenreSectionsAtMs = 0L
@@ -532,7 +471,6 @@ class YouTubeMusicRepository : MusicRepository {
         @Volatile private var cachedGenreSectionsAtMs: Long = 0L
         @Volatile private var cachedFeaturedPlaylists: List<Playlist>? = null
         @Volatile private var cachedFeaturedPlaylistsAtMs: Long = 0L
-        private val cachedDiscoveryFolders = ConcurrentHashMap<String, CachedDiscoveryFolder>()
         private val cachedDiscoveryGroups = ConcurrentHashMap<String, CachedDiscoveryGroup>()
 
         private val DISCOVERY_FEATURED_QUERIES = listOf(
@@ -578,11 +516,6 @@ class YouTubeMusicRepository : MusicRepository {
             GenreDefinition("2000s", "Anni 2000", "2000s hits playlist"),
         )
     }
-
-    private data class CachedDiscoveryFolder(
-        val content: DiscoveryFolderContent,
-        val loadedAtMs: Long,
-    )
 
     private data class CachedDiscoveryGroup(
         val content: DiscoveryGroupSection,

@@ -209,11 +209,7 @@ class MainActivity : ComponentActivity() {
                                     onOpenRecentHistory = {
                                         navController.navigate(HISTORY_ROUTE) { launchSingleTop = true }
                                     },
-                                    onStartDailyMix = {
-                                        playbackViewModel.startPersonalizedMix(
-                                            app.lyra.music.personalization.PersonalizedMixEngine.DAILY_ID
-                                        )
-                                    },
+                                    onStartDailyMix = playbackViewModel::startPersonalizedMix,
                                     dailyMixLoading = automaticPlaylistLoading,
                                     dailyMixError = automaticPlaylistError,
                                     viewModel = homeViewModel,
@@ -246,9 +242,6 @@ class MainActivity : ComponentActivity() {
                                 DiscoverScreen(
                                     playbackViewModel = playbackViewModel,
                                     onBack = { navController.popBackStack() },
-                                    onPlaylistClick = { playlistId ->
-                                        navController.navigate("playlist/$playlistId")
-                                    },
                                 )
                             }
 

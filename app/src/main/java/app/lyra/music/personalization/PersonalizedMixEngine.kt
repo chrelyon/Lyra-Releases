@@ -1,58 +1,68 @@
 package app.lyra.music.personalization
 
 import app.lyra.music.core.model.Song
+import app.lyra.music.playback.AutomaticPlaylistManager
 import app.lyra.music.playback.ListeningProfileStore
-import app.lyra.music.youtube.repository.AutomaticPlaylistCatalog
+import app.lyra.music.youtube.cache.YouTubeLibraryCache
+import app.lyra.music.youtube.likes.YouTubeLikesManager
+import app.lyra.music.youtube.repository.YouTubeMusicRepository
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
- * Motore locale della sezione Scopri -> Per te.
- * Non usa servizi cloud aggiuntivi: lavora esclusivamente sui segnali salvati da Lyra.
+ * Mix per me: circa il 70% di brani molto ascoltati e dei Preferiti Google,
+ * circa il 30% di proposte nuove della radio YouTube Music generata da un brano
+ * apprezzato, quindi coerente con le preferenze dell'utente.
  */
 object PersonalizedMixEngine {
-    const val DAILY_ID = "daily"
-    const val RECENT_FAVORITES_ID = "recent-favorites"
-    const val REDISCOVER_ID = "rediscover"
-    private const val GENRE_PREFIX = "genre:"
+    const val TITLE = "Mix per me"
+    private const val QUEUE_SIZE = 40
+    private const val FAVORITES_TIMEOUT_MS = 10_000L
+    private const val KNOWN_SHARE = 0.7
 
-    data class MixSummary(
-        val id: String,
-        val title: String,
-        val subtitle: String,
-        val automatic: Boolean,
-    )
-
-    fun summaries(): List<MixSummary> = listOf(
-        MixSummary(DAILY_ID, "Mix quotidiano", "Radio dai tuoi ascolti migliori", automatic = true),
-        MixSummary(RECENT_FAVORITES_ID, "Preferiti recenti", "Canzoni apprezzate di recente", automatic = false),
-        MixSummary(REDISCOVER_ID, "Riscoperte", "Brani da riscoprire", automatic = false),
-    )
-
-    fun localSongs(mixId: String): List<Song> = when (mixId) {
-        RECENT_FAVORITES_ID -> ListeningProfileStore.recentLiked()
-        REDISCOVER_ID -> ListeningProfileStore.rediscover()
-        else -> emptyList()
+    private suspend fun googleFavorites(): List<Song> {
+        val id = YouTubeLibraryCache.favoritesPlaylistId() ?: return emptyList()
+        val songs = runCatching {
+            withTimeoutOrNull(FAVORITES_TIMEOUT_MS) { YouTubeMusicRepository().getPlaylist(id).songs }
+        }.getOrNull().orEmpty()
+        return YouTubeLikesManager.applyRecentChanges(songs)
     }
 
-    fun automaticSeed(mixId: String): Pair<Song, String>? = when {
-        mixId == DAILY_ID -> ListeningProfileStore.topSongs(limit = 20)
-            .filterNot { it.isLocal }
-            .take(12)
-            .let { songs ->
-                if (songs.isEmpty()) null
-                else {
-                    val day = System.currentTimeMillis() / (24L * 60L * 60L * 1000L)
-                    songs[(day % songs.size).toInt()] to "Il tuo mix quotidiano"
-                }
+    /** Brani noti: alternati tra ascolti a punteggio alto e Preferiti, senza duplicati. */
+    private suspend fun knownPool(): List<Song> {
+        val top = ListeningProfileStore.topSongs(limit = 60).filterNot { it.isLocal }.shuffled()
+        val favorites = googleFavorites().filterNot { it.isLocal }.shuffled()
+        return buildList {
+            for (i in 0 until maxOf(top.size, favorites.size)) {
+                top.getOrNull(i)?.let(::add)
+                favorites.getOrNull(i)?.let(::add)
             }
+        }.distinctBy { it.id }
+    }
 
-        mixId.startsWith(GENRE_PREFIX) -> {
-            val tag = mixId.removePrefix(GENRE_PREFIX)
-            AutomaticPlaylistCatalog.preset(tag)?.let { preset ->
-                ListeningProfileStore.bestSeedForTag(tag)
-                    ?.let { seed -> seed to "Il tuo ${preset.title}" }
-            }
+    suspend fun build(): AutomaticPlaylistManager.StartResult {
+        val pool = knownPool()
+        if (pool.isEmpty()) {
+            throw IllegalStateException("Ascolta o salva qualche brano tra i Preferiti per creare il Mix per me")
         }
+        val knownCount = (QUEUE_SIZE * KNOWN_SHARE).toInt()
+        val known = pool.take(knownCount)
+        val knownIds = pool.mapTo(HashSet()) { it.id }
 
-        else -> null
+        AutomaticPlaylistManager.clear()
+        val fresh = runCatching {
+            AutomaticPlaylistManager.startFromSeed(known.random(), TITLE).songs
+        }.getOrDefault(emptyList())
+            .filter { it.id !in knownIds }
+            .take(QUEUE_SIZE - known.size)
+
+        // Una proposta nuova ogni tre brani noti circa, per mantenere il 70/30 lungo tutta la coda.
+        val queue = ArrayList<Song>(known.size + fresh.size)
+        val freshIterator = fresh.iterator()
+        known.forEachIndexed { index, song ->
+            queue.add(song)
+            if ((index + 1) % 2 == 0 && freshIterator.hasNext()) queue.add(freshIterator.next())
+        }
+        freshIterator.forEachRemaining(queue::add)
+        return AutomaticPlaylistManager.StartResult(TITLE, queue.distinctBy { it.id })
     }
 }

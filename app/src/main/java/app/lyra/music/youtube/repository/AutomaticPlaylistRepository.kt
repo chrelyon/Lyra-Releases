@@ -170,7 +170,7 @@ object AutomaticPlaylistCatalog {
             "pop Italia hits", "Italian pop hits", "global pop hits", "international pop hits"),
         preset("rock", "Rock", "Rock e preferenze personali",
             "rock Italia", "European rock", "Italian rock hits"),
-        preset("rap", "Hip Hop e Rap", "Hip Hop e Rap",
+        preset("rap", "Hip Hop", "Hip Hop e Rap",
             "rap italiano", "European hip hop", "hip hop Italia"),
         preset("dance", "Dance", "Dance",
             "dance Italia hits", "European dance hits", "dance Europe"),
@@ -178,11 +178,11 @@ object AutomaticPlaylistCatalog {
             "house Italia", "European house", "deep house Europe", "tech house Europe"),
         preset("techno", "Techno", "Techno e melodic techno",
             "techno Italia", "European techno", "Berlin techno", "melodic techno Europe"),
-        preset("edm", "EDM ed Elettronica", "EDM ed elettronica",
+        preset("edm", "Elettronica", "Elettronica ed EDM",
             "EDM Italia", "European electronic music", "EDM Europe"),
         preset("indie", "Indie", "Indie rock e indie pop",
             "indie Italia", "European indie", "Italian indie"),
-        preset("rnb", "R&B e Soul", "R&B e soul",
+        preset("rnb", "R&B", "R&B e soul",
             "R&B Italia", "European R&B", "soul Europe"),
         preset("metal", "Metal", "Metal",
             "metal Italia", "European metal", "Italian metal"),
@@ -191,6 +191,14 @@ object AutomaticPlaylistCatalog {
         preset("classica", "Classica", "Musica classica",
             "classical Europe", "musica classica Italia", "European classical music"),
     )
+
+    /** Generi mostrati nei menu (app e Android Auto), nell'ordine di visualizzazione. */
+    private val menuIds = listOf(
+        "pop", "rock", "metal", "house", "techno", "edm",
+        "dance", "rap", "rnb", "jazz", "classica",
+    )
+
+    val menuPresets: List<Preset> = menuIds.mapNotNull { preset(it) }
 
     fun preset(id: String): Preset? = presets.firstOrNull { it.id == id }
 

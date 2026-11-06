@@ -13,30 +13,10 @@ data class DiscoveryGenreSection(
     val playlists: List<Playlist>,
 )
 
-/**
- * Cartella di primo livello della nuova sezione Scopri.
- *
- * Le definizioni sono locali e leggere: le playlist vengono caricate soltanto
- * quando l'utente apre la cartella, evitando decine di richieste all'avvio.
- */
-data class DiscoveryFolderSummary(
-    val id: String,
-    val title: String,
-    val subtitle: String,
-    val groupCount: Int,
-)
-
 data class DiscoveryGroupSummary(
     val id: String,
     val title: String,
     val playlistCount: Int? = null,
-)
-
-data class DiscoveryFolderContent(
-    val id: String,
-    val title: String,
-    val subtitle: String,
-    val groups: List<DiscoveryGroupSection>,
 )
 
 data class DiscoveryGroupSection(

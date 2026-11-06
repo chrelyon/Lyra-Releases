@@ -25,11 +25,8 @@ internal object DiscoveryCatalog {
         FolderDefinition(
             id = "novita",
             title = "Novità",
-            subtitle = "Brani da album dell'anno, escluse ristampe riconoscibili",
-            groups = listOf(
-                group("hit-italiane", "Hit del momento italiane", "nuove hit italiane"),
-                group("hit-straniere", "Hit del momento straniere", "new international hits"),
-            )
+            subtitle = "Brani italiani e stranieri dell'anno corrente",
+            groups = listOf(group("tutte", "Novità", "nuove hit italiane", "new international hits")),
         ),
         FolderDefinition(
             id = "mood",
@@ -67,67 +64,22 @@ internal object DiscoveryCatalog {
             ),
         ),
         FolderDefinition(
-            id = "attivita",
-            title = "Workout",
-            subtitle = "Allenamento continuo scelto da Lyra da YouTube Music",
-            groups = listOf(
-                group("workout", "Workout e allenamento",
-                    "workout gym fitness music playlist",
-                    "best training motivation playlist",
-                    "workout elettronica dance fitness playlist",
-                    "running gym high energy playlist"),
-            ),
-        ),
-        FolderDefinition(
             id = "decenni",
             title = "Decenni",
-            subtitle = "Edizioni album del periodo; prima uscita del brano non certificata",
+            subtitle = "Dagli anni 80 a oggi",
             groups = listOf(
                 decade("80s", "Anni 80", "80s"),
                 decade("90s", "Anni 90", "90s"),
                 decade("2000s", "Anni 2000", "2000s"),
                 decade("2010s", "Anni 2010", "2010s"),
+                decade("2020s", "Anni 2020", "2020s"),
             ),
         ),
         FolderDefinition(
-            id = "nazioni",
-            title = "Italia & Europa",
-            subtitle = "Scene e hit dai principali paesi europei",
-            groups = listOf(
-                group("italia", "Italia",
-                    "Italian hits playlist",
-                    "hit italiane playlist",
-                    "musica italiana playlist",
-                    "Italia top songs playlist"),
-                group("europa", "Europa",
-                    "European hits playlist",
-                    "Europe top songs playlist",
-                    "European music playlist"),
-                group("uk", "Regno Unito",
-                    "UK hits playlist",
-                    "British hits playlist",
-                    "UK music playlist"),
-                group("francia", "Francia",
-                    "French hits playlist",
-                    "France top songs playlist",
-                    "musique française playlist"),
-                group("germania", "Germania",
-                    "German hits playlist",
-                    "Germany top songs playlist",
-                    "deutsche hits playlist"),
-                group("spagna", "Spagna",
-                    "Spanish hits playlist",
-                    "Spain top songs playlist",
-                    "éxitos España playlist"),
-                group("paesi-bassi", "Paesi Bassi",
-                    "Netherlands hits playlist",
-                    "Dutch hits playlist",
-                    "Nederland muziek playlist"),
-                group("scandinavia", "Scandinavia",
-                    "Scandinavian hits playlist",
-                    "Nordic hits playlist",
-                    "Sweden Norway Denmark hits playlist"),
-            ),
+            id = "italiane",
+            title = "Italiane",
+            subtitle = "Canzoni italiane dal catalogo Lyra e nuove proposte",
+            groups = listOf(group("italia", "Italiane", "Italian hits playlist")),
         ),
     )
 
@@ -157,44 +109,7 @@ internal object DiscoveryCatalog {
         )
     }
 
-    private val internationalSceneGroups = listOf(
-        group("usa", "Stati Uniti",
-            "US hits playlist", "American hits playlist", "USA top songs playlist"),
-        group("latina", "America Latina",
-            "Latin hits playlist", "Latin pop playlist", "Latin music hits playlist"),
-        group("korea", "Corea / K-Pop",
-            "K-pop hits playlist", "Korean pop playlist", "K-pop top songs playlist"),
-        group("japan", "Giappone",
-            "Japan hits playlist", "J-pop playlist", "Japanese music playlist"),
-    )
-
-    fun groupsFor(
-        folder: FolderDefinition,
-        mode: DiscoverySettings.RegionMode,
-    ): List<GroupDefinition> {
-        if (folder.id != "nazioni") return folder.groups
-        return when (mode) {
-            DiscoverySettings.RegionMode.ITALY -> folder.groups.filter { it.id == "italia" }
-            DiscoverySettings.RegionMode.ITALY_EUROPE -> folder.groups
-            DiscoverySettings.RegionMode.INTERNATIONAL -> folder.groups + internationalSceneGroups
-        }
-    }
-
-    fun folderTitle(folder: FolderDefinition, mode: DiscoverySettings.RegionMode): String =
-        if (folder.id == "nazioni" && mode == DiscoverySettings.RegionMode.INTERNATIONAL) {
-            "Nazioni e scene"
-        } else if (folder.id == "nazioni" && mode == DiscoverySettings.RegionMode.ITALY) {
-            "Italia"
-        } else {
-            folder.title
-        }
-
-    fun folderSubtitle(folder: FolderDefinition, mode: DiscoverySettings.RegionMode): String =
-        if (folder.id != "nazioni") folder.subtitle else when (mode) {
-            DiscoverySettings.RegionMode.ITALY -> "Playlist e scene italiane"
-            DiscoverySettings.RegionMode.ITALY_EUROPE -> folder.subtitle
-            DiscoverySettings.RegionMode.INTERNATIONAL -> "Scene e hit da Italia, Europa e resto del mondo"
-        }
+    fun groupsFor(folder: FolderDefinition): List<GroupDefinition> = folder.groups
 
     private fun group(id: String, title: String, vararg queries: String) =
         GroupDefinition(id = id, title = title, queries = queries.toList())
