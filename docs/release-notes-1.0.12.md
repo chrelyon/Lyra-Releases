@@ -5,6 +5,8 @@
 - Il sottomenu Playlist Automatica mostra soltanto Pop, Rock, House e Techno.
 - Mix per me e Novità sono scorciatoie riproducibili direttamente, senza
   cartelle intermedie.
+- Mix per me usa lo stesso algoritmo server della schermata Android, con
+  fallback locale quando il servizio non è disponibile.
 - Introdotto un catalogo condiviso per definire una sola volta voci, ordine
   e generi mostrati sia nell'app sia in Android Auto.
 - Versionati gli ID della navigazione Android Auto e disattivati i vecchi nodi
