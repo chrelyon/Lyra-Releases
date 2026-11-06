@@ -36,7 +36,6 @@ import androidx.media3.session.MediaConstants
 import app.lyra.music.core.model.DiscoveryFolderSummary
 import app.lyra.music.core.model.DiscoveryGroupSection
 import app.lyra.music.core.model.DiscoveryGroupSummary
-import app.lyra.music.core.model.DiscoverySnapshot
 import app.lyra.music.core.model.Playlist
 import app.lyra.music.core.model.PlaylistContent
 import app.lyra.music.core.model.Song
@@ -93,7 +92,6 @@ class PlaybackService : MediaLibraryService() {
     private val musicRepository = YouTubeMusicRepository()
     private val localMediaRepository by lazy { LocalMediaRepository(this) }
 
-    private var discoveryCache: DiscoverySnapshot? = null
     private val discoveryGroupCache = mutableMapOf<String, DiscoveryGroupSection>()
     private val discoveryPlaylistCache = mutableMapOf<String, Playlist>()
     private var localSongsCache: List<Song> = emptyList()
@@ -529,16 +527,18 @@ class PlaybackService : MediaLibraryService() {
             }
 
             if (parentId == AUTO_DISCOVER_ROOT_ID) {
+                val folders = musicRepository.getDiscoveryFolders()
                 val items = buildList {
-                    // Scorciatoia immediata, senza aggiungere una quinta tab Android Auto.
-                    PersonalizedMixEngine.summaries()
-                        .firstOrNull { it.id == PersonalizedMixEngine.DAILY_ID }
-                        ?.let(::buildForYouMixMediaItem)
-                        ?.let(::add)
+                    // Stesso ordine e stessi nodi della schermata Scopri Android:
+                    // Playlist Automatica, Per te e le cartelle del DiscoveryCatalog.
                     add(buildAutomaticPlaylistRootMediaItem())
                     add(buildForYouRootMediaItem())
-                    addAll(musicRepository.getDiscoveryFolders().map(::buildDiscoverFolderMediaItem))
+                    addAll(folders.map(::buildDiscoverFolderMediaItem))
                 }.forBrowser(session, browser, page, pageSize)
+                Log.d(
+                    "LYRA_AUTO",
+                    "browseDiscoverRoot items=${items.size} folders=${folders.joinToString(",") { it.id }}"
+                )
                 return Futures.immediateFuture(
                     LibraryResult.ofItemList(items, params)
                 )
@@ -627,94 +627,6 @@ class PlaybackService : MediaLibraryService() {
                     future.set(
                         LibraryResult.ofItemList(
                             group?.playlists.orEmpty()
-                                .map(::buildPlaylistMediaItem)
-                                .forBrowser(session, browser, page, pageSize),
-                            params,
-                        )
-                    )
-                }
-                return future
-            }
-
-            if (parentId == AUTO_DISCOVER_TOP_ID) {
-                val future = SettableFuture.create<LibraryResult<ImmutableList<MediaItem>>>()
-                serviceScope.launch {
-                    val songs = runCatching {
-                        if (!ensureYouTubeAuthorization()) emptyList()
-                        else withContext(Dispatchers.IO) { musicRepository.getTopMusicVideos() }
-                    }.onFailure { error ->
-                        Log.e("LYRA_AUTO", "discoverTop failed message=${error.message}", error)
-                    }.getOrDefault(emptyList())
-
-                    future.set(
-                        LibraryResult.ofItemList(
-                            buildQueueMediaItems(
-                                queueKey = "discover:top-it",
-                                queueTitle = "Top musica Italia",
-                                songs = songs,
-                            ).forBrowser(session, browser, page, pageSize),
-                            params,
-                        )
-                    )
-                }
-                return future
-            }
-
-            if (parentId == AUTO_DISCOVER_PLAYLISTS_ID) {
-                val future = SettableFuture.create<LibraryResult<ImmutableList<MediaItem>>>()
-                serviceScope.launch {
-                    val snapshot = runCatching {
-                        discoveryCache ?: withContext(Dispatchers.IO) {
-                            musicRepository.getDiscoverySnapshot()
-                        }.also { discoveryCache = it }
-                    }.onFailure { error ->
-                        Log.e("LYRA_AUTO", "discoverPlaylists failed message=${error.message}", error)
-                    }.getOrNull()
-
-                    future.set(
-                        LibraryResult.ofItemList(
-                            snapshot?.playlists.orEmpty()
-                                .map(::buildPlaylistMediaItem)
-                                .forBrowser(session, browser, page, pageSize),
-                            params,
-                        )
-                    )
-                }
-                return future
-            }
-
-            if (parentId == AUTO_DISCOVER_GENRES_ID) {
-                val future = SettableFuture.create<LibraryResult<ImmutableList<MediaItem>>>()
-                serviceScope.launch {
-                    val snapshot = loadDiscoverySnapshotForAuto()
-                    val items = snapshot?.genres.orEmpty().map { genre ->
-                        buildDiscoverGenreMediaItem(
-                            genreId = genre.id,
-                            title = genre.title,
-                            playlistCount = genre.playlists.size,
-                            artworkUrl = genre.playlists.firstNotNullOfOrNull { it.thumbnailUrl },
-                        )
-                    }
-                    future.set(
-                        LibraryResult.ofItemList(
-                            items.forBrowser(session, browser, page, pageSize),
-                            params,
-                        )
-                    )
-                }
-                return future
-            }
-
-            if (parentId.startsWith(AUTO_DISCOVER_GENRE_PREFIX)) {
-                val genreId = Uri.decode(parentId.removePrefix(AUTO_DISCOVER_GENRE_PREFIX))
-                val future = SettableFuture.create<LibraryResult<ImmutableList<MediaItem>>>()
-                serviceScope.launch {
-                    val genre = loadDiscoverySnapshotForAuto()
-                        ?.genres
-                        ?.firstOrNull { it.id == genreId }
-                    future.set(
-                        LibraryResult.ofItemList(
-                            genre?.playlists.orEmpty()
                                 .map(::buildPlaylistMediaItem)
                                 .forBrowser(session, browser, page, pageSize),
                             params,
@@ -894,15 +806,6 @@ class PlaybackService : MediaLibraryService() {
                 AUTO_HISTORY_ROOT_ID -> return Futures.immediateFuture(
                     LibraryResult.ofItem(buildHistoryRootMediaItem(), null)
                 )
-                AUTO_DISCOVER_TOP_ID -> return Futures.immediateFuture(
-                    LibraryResult.ofItem(buildDiscoverTopMediaItem(), null)
-                )
-                AUTO_DISCOVER_PLAYLISTS_ID -> return Futures.immediateFuture(
-                    LibraryResult.ofItem(buildDiscoverPlaylistsMediaItem(), null)
-                )
-                AUTO_DISCOVER_GENRES_ID -> return Futures.immediateFuture(
-                    LibraryResult.ofItem(buildDiscoverGenresMediaItem(), null)
-                )
                 AUTO_LOCAL_ROOT_ID -> return Futures.immediateFuture(
                     LibraryResult.ofItem(buildLocalLibraryMediaItem(), null)
                 )
@@ -973,22 +876,6 @@ class PlaybackService : MediaLibraryService() {
                 )
             }
 
-            if (mediaId.startsWith(AUTO_DISCOVER_GENRE_PREFIX)) {
-                val genreId = Uri.decode(mediaId.removePrefix(AUTO_DISCOVER_GENRE_PREFIX))
-                val genre = discoveryCache?.genres?.firstOrNull { it.id == genreId }
-                return Futures.immediateFuture(
-                    LibraryResult.ofItem(
-                        buildDiscoverGenreMediaItem(
-                            genreId = genreId,
-                            title = genre?.title ?: genreId.replaceFirstChar { it.uppercase() },
-                            playlistCount = genre?.playlists?.size ?: 0,
-                            artworkUrl = genre?.playlists?.firstNotNullOfOrNull { it.thumbnailUrl },
-                        ),
-                        null,
-                    )
-                )
-            }
-
             if (mediaId.startsWith(AUTO_FOR_YOU_MIX_PREFIX)) {
                 val mixId = Uri.decode(mediaId.removePrefix(AUTO_FOR_YOU_MIX_PREFIX))
                 val mix = PersonalizedMixEngine.summaries().firstOrNull { it.id == mixId }
@@ -1013,11 +900,6 @@ class PlaybackService : MediaLibraryService() {
                 val playlist = YouTubeLibraryCache.load()
                     ?.playlists
                     ?.firstOrNull { it.id == playlistId }
-                    ?: discoveryCache?.playlists?.firstOrNull { it.id == playlistId }
-                    ?: discoveryCache?.genres
-                        ?.asSequence()
-                        ?.flatMap { it.playlists.asSequence() }
-                        ?.firstOrNull { it.id == playlistId }
                     ?: discoveryPlaylistCache[playlistId]
                     ?: SavedAutomaticPlaylistStore.asPlaylists().firstOrNull { it.id == playlistId }
                     ?: discoveryGroupCache.values
@@ -1988,69 +1870,9 @@ class PlaybackService : MediaLibraryService() {
         .setMediaMetadata(
             MediaMetadata.Builder()
                 .setTitle("Scopri")
-                .setSubtitle("Novità, mood, generi, attività, decenni, Italia & Europa")
+                .setSubtitle("Playlist automatiche, mix personali e categorie musicali aggiornate")
                 .setArtworkUri(autoArtworkUri(null, R.drawable.auto_art_discover))
                 .setExtras(compactFolderStyleExtras())
-                .setIsBrowsable(true)
-                .setIsPlayable(false)
-                .build()
-        )
-        .build()
-
-    private fun buildDiscoverTopMediaItem(): MediaItem = MediaItem.Builder()
-        .setMediaId(AUTO_DISCOVER_TOP_ID)
-        .setMediaMetadata(
-            MediaMetadata.Builder()
-                .setTitle("Top musica Italia")
-                .setSubtitle("I brani musicali più popolari su YouTube")
-                .setArtworkUri(autoArtworkUri(null, R.drawable.auto_art_top))
-                .setExtras(compactFolderStyleExtras())
-                .setIsBrowsable(true)
-                .setIsPlayable(false)
-                .build()
-        )
-        .build()
-
-    private fun buildDiscoverPlaylistsMediaItem(): MediaItem = MediaItem.Builder()
-        .setMediaId(AUTO_DISCOVER_PLAYLISTS_ID)
-        .setMediaMetadata(
-            MediaMetadata.Builder()
-                .setTitle("Playlist YouTube Music")
-                .setSubtitle("Raccolte musicali dal catalogo YouTube Music")
-                .setArtworkUri(autoArtworkUri(null, R.drawable.auto_art_folder))
-                .setExtras(compactFolderStyleExtras())
-                .setIsBrowsable(true)
-                .setIsPlayable(false)
-                .build()
-        )
-        .build()
-
-    private fun buildDiscoverGenresMediaItem(): MediaItem = MediaItem.Builder()
-        .setMediaId(AUTO_DISCOVER_GENRES_ID)
-        .setMediaMetadata(
-            MediaMetadata.Builder()
-                .setTitle("Generi musicali")
-                .setSubtitle("Pop, Rock, Rap, Dance, Jazz e altro")
-                .setArtworkUri(autoArtworkUri(null, R.drawable.auto_art_discover_genres))
-                .setExtras(compactFolderStyleExtras())
-                .setIsBrowsable(true)
-                .setIsPlayable(false)
-                .build()
-        )
-        .build()
-
-    private fun buildDiscoverGenreMediaItem(
-        genreId: String,
-        title: String,
-        playlistCount: Int,
-        artworkUrl: String?,
-    ): MediaItem = MediaItem.Builder()
-        .setMediaId(AUTO_DISCOVER_GENRE_PREFIX + Uri.encode(genreId))
-        .setMediaMetadata(
-            MediaMetadata.Builder()
-                .setTitle(title)
-                .setSubtitle(if (playlistCount == 1) "1 playlist" else "$playlistCount playlist")
-                .setArtworkUri(autoArtworkUri(artworkUrl, R.drawable.auto_art_genres))
                 .setIsBrowsable(true)
                 .setIsPlayable(false)
                 .build()
@@ -2368,15 +2190,6 @@ class PlaybackService : MediaLibraryService() {
                 automaticSeed = true,
             )
         }
-    }
-
-    private suspend fun loadDiscoverySnapshotForAuto(): DiscoverySnapshot? {
-        discoveryCache?.let { return it }
-        return runCatching {
-            withContext(Dispatchers.IO) { musicRepository.getDiscoverySnapshot() }
-        }.onFailure { error ->
-            Log.e("LYRA_AUTO", "discoverSnapshot failed message=${error.message}", error)
-        }.getOrNull()?.also { discoveryCache = it }
     }
 
     private suspend fun loadPlaylistForAuto(playlistId: String): PlaylistContent {
@@ -3709,10 +3522,6 @@ class PlaybackService : MediaLibraryService() {
         const val AUTO_AUTOMATIC_PRESET_PREFIX = "lyra:auto:automatic:preset:"
         const val AUTO_DISCOVER_FOLDER_PREFIX = "lyra:auto:discover:folder:"
         const val AUTO_DISCOVER_GROUP_PREFIX = "lyra:auto:discover:group:"
-        const val AUTO_DISCOVER_TOP_ID = "lyra:auto:discover:top-it"
-        const val AUTO_DISCOVER_PLAYLISTS_ID = "lyra:auto:discover:playlists"
-        const val AUTO_DISCOVER_GENRES_ID = "lyra:auto:discover:genres"
-        const val AUTO_DISCOVER_GENRE_PREFIX = "lyra:auto:discover:genre:"
         const val AUTO_LOCAL_ROOT_ID = "lyra:auto:local"
         const val AUTO_LOCAL_SONGS_ID = "lyra:auto:local:songs"
         const val AUTO_LOCAL_ALBUMS_ID = "lyra:auto:local:albums"
