@@ -11,5 +11,5 @@
   Scopri per evitare che il client continui a proporre voci memorizzate.
 - Nessuna modifica alle credenziali, al server o alla chiave di firma.
 
-La CI genera una APK DEBUG non firmata con la chiave release. Per distribuire
-l'aggiornamento serve la compilazione locale con il keystore originale.
+La CI genera una APK DEBUG firmata con la chiave debug, non con la chiave release.
+Per distribuire l'aggiornamento serve la compilazione locale con il keystore originale.
