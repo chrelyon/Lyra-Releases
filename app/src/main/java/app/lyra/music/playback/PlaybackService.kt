@@ -564,7 +564,7 @@ class PlaybackService : MediaLibraryService() {
 
             if (parentId == AUTO_FOR_YOU_ROOT_ID) {
                 val items = PersonalizedMixEngine.summaries()
-                    .mapNotNull(::buildForYouMixMediaItem)
+                    .map(::buildForYouMixMediaItem)
                     .forBrowser(session, browser, page, pageSize)
                 return Futures.immediateFuture(
                     LibraryResult.ofItemList(items, params)
@@ -1679,29 +1679,31 @@ class PlaybackService : MediaLibraryService() {
 
     private fun buildForYouMixMediaItem(
         mix: PersonalizedMixEngine.MixSummary,
-    ): MediaItem? {
+    ): MediaItem {
         val automatic = PersonalizedMixEngine.automaticSeed(mix.id)
         val localSongs = PersonalizedMixEngine.localSongs(mix.id)
         val songs = automatic?.first?.let(::listOf) ?: localSongs
-        val first = songs.firstOrNull() ?: return null
+        val first = songs.firstOrNull()
         val mediaId = AUTO_FOR_YOU_MIX_PREFIX + Uri.encode(mix.id)
         val queueTitle = automatic?.second ?: mix.title
-        autoSongContexts[mediaId] = AutoSongContext(
-            song = first,
-            queueTitle = queueTitle,
-            queueSongs = songs,
-            index = 0,
-            automaticSeed = automatic != null,
-        )
+        if (first != null) {
+            autoSongContexts[mediaId] = AutoSongContext(
+                song = first,
+                queueTitle = queueTitle,
+                queueSongs = songs,
+                index = 0,
+                automaticSeed = automatic != null,
+            )
+        }
         return MediaItem.Builder()
             .setMediaId(mediaId)
             .setMediaMetadata(
                 MediaMetadata.Builder()
                     .setTitle(if (mix.id == PersonalizedMixEngine.DAILY_ID) "Mix per me" else mix.title)
                     .setSubtitle(mix.subtitle)
-                    .setArtworkUri(autoArtworkUri(first.thumbnailUrl, R.drawable.auto_art_for_you))
+                    .setArtworkUri(autoArtworkUri(first?.thumbnailUrl, R.drawable.auto_art_for_you))
                     .setIsBrowsable(false)
-                    .setIsPlayable(true)
+                    .setIsPlayable(first != null)
                     .build()
             )
             .build()

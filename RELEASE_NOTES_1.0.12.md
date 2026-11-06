@@ -3,6 +3,7 @@
 ## Android Auto — Scopri allineato all'app
 
 - La radice Scopri di Android Auto usa lo stesso ordine e gli stessi nodi della schermata Android: Playlist Automatica, Per te e le cartelle del catalogo Scopri.
+- La sezione Per te mantiene visibili tutti e tre i mix come nell'app anche quando un mix non ha ancora brani disponibili; in quel caso la voce resta non riproducibile.
 - Rimossa la scorciatoia diretta aggiuntiva al Mix quotidiano, che non esiste come voce autonoma nella schermata Android.
 - Rimossi i vecchi nodi di navigazione Scopri per Top musica Italia, Playlist YouTube Music e Generi musicali, non più presenti nel catalogo attuale.
 - Aggiornata la descrizione Scopri per non pubblicizzare categorie obsolete.
