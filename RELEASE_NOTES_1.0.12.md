@@ -1,4 +1,4 @@
-# Lyra Android 1.0.11 (versionCode 49)
+# Lyra Android 1.0.12 (versionCode 50)
 
 ## Android Auto — Scopri allineato all'app
 
@@ -10,8 +10,8 @@
 
 ## Versione
 
-- versionName: 1.0.11
-- versionCode: 49
+- versionName: 1.0.12
+- versionCode: 50
 
 ## Verifica
 
