@@ -29,6 +29,7 @@ object VerifiedGenrePlaylistClient {
         preset != null && (preset in genrePresets || preset in moodPresets)
 
     fun isMood(preset: String?): Boolean = preset != null && preset in moodPresets
+    fun isGenre(preset: String?): Boolean = preset != null && preset in genrePresets
     fun enabled(preset: String?): Boolean =
         supported(preset) && GenreClassifierSettings.isConfigured()
 
