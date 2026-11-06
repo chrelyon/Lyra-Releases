@@ -33,44 +33,17 @@ internal object DiscoveryCatalog {
         ),
         FolderDefinition(
             id = "nazioni",
-            title = "Italia & Europa",
-            subtitle = "Scene e hit dai principali paesi europei",
+            title = "Italiane",
+            subtitle = "Brani italiani classificati da Lyra",
             groups = listOf(
-                group("italia", "Italia",
-                    "Italian hits playlist",
-                    "hit italiane playlist",
+                group("italia", "Canzoni italiane",
                     "musica italiana playlist",
-                    "Italia top songs playlist"),
-                group("europa", "Europa",
-                    "European hits playlist",
-                    "Europe top songs playlist",
-                    "European music playlist"),
-                group("uk", "Regno Unito",
-                    "UK hits playlist",
-                    "British hits playlist",
-                    "UK music playlist"),
-                group("francia", "Francia",
-                    "French hits playlist",
-                    "France top songs playlist",
-                    "musique française playlist"),
-                group("germania", "Germania",
-                    "German hits playlist",
-                    "Germany top songs playlist",
-                    "deutsche hits playlist"),
-                group("spagna", "Spagna",
-                    "Spanish hits playlist",
-                    "Spain top songs playlist",
-                    "éxitos España playlist"),
-                group("paesi-bassi", "Paesi Bassi",
-                    "Netherlands hits playlist",
-                    "Dutch hits playlist",
-                    "Nederland muziek playlist"),
-                group("scandinavia", "Scandinavia",
-                    "Scandinavian hits playlist",
-                    "Nordic hits playlist",
-                    "Sweden Norway Denmark hits playlist"),
+                    "canzoni italiane",
+                    "Italian hits playlist",
+                    "Italian pop and rock songs"),
             ),
-        ),        FolderDefinition(
+        ),
+        FolderDefinition(
             id = "decenni",
             title = "Decenni",
             subtitle = "Edizioni album del periodo; prima uscita del brano non certificata",
@@ -111,24 +84,10 @@ internal object DiscoveryCatalog {
         )
     }
 
-    private val internationalSceneGroups = listOf(
-        group("usa", "Stati Uniti",
-            "US hits playlist", "American hits playlist", "USA top songs playlist"),
-        group("latina", "America Latina",
-            "Latin hits playlist", "Latin pop playlist", "Latin music hits playlist"),
-        group("korea", "Corea / K-Pop",
-            "K-pop hits playlist", "Korean pop playlist", "K-pop top songs playlist"),
-        group("japan", "Giappone",
-            "Japan hits playlist", "J-pop playlist", "Japanese music playlist"),
-    )
-
     fun groupsFor(
         folder: FolderDefinition,
         mode: DiscoverySettings.RegionMode,
-    ): List<GroupDefinition> {
-        if (folder.id == "nazioni") return folder.groups.filter { it.id == "italia" }
-        return folder.groups
-    }
+    ): List<GroupDefinition> = folder.groups
 
     fun folderTitle(folder: FolderDefinition, mode: DiscoverySettings.RegionMode): String =
         if (folder.id == "nazioni") "Italiane" else folder.title
