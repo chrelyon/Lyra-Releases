@@ -2499,6 +2499,26 @@ class PlaybackService : MediaLibraryService() {
             val mixId = Uri.decode(mediaId.removePrefix(AUTO_FOR_YOU_MIX_PREFIX))
             val mix = PersonalizedMixEngine.summaries().firstOrNull { it.id == mixId }
                 ?: throw IllegalArgumentException("Mix Lyra non riconosciuto")
+            if (mixId == PersonalizedMixEngine.DAILY_ID && PersonalizationSettings.useServerAlgorithm.value) {
+                AutomaticPlaylistManager.clear()
+                val serverResult = runCatching {
+                    AutomaticPlaylistManager.startPersonalizedMix()
+                }.onFailure { error ->
+                    Log.w("LYRA_AUTO", "forYouServerFallback message=${error.message}")
+                }.getOrNull()
+                if (serverResult != null) {
+                    val first = serverResult.songs.firstOrNull()
+                        ?: throw IllegalStateException("Mix per me senza brani")
+                    return AutoSongContext(
+                        song = first,
+                        queueTitle = serverResult.title,
+                        queueSongs = serverResult.songs,
+                        index = 0,
+                        automaticSeed = true,
+                    )
+                }
+            }
+
             val automatic = PersonalizedMixEngine.automaticSeed(mixId)
             if (automatic != null) {
                 // Lo stesso motore usato dal pulsante Mix per me sul telefono.
