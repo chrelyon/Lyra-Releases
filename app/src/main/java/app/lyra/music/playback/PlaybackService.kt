@@ -21,6 +21,7 @@ import androidx.annotation.OptIn
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
@@ -118,6 +119,10 @@ class PlaybackService : MediaLibraryService() {
     private val pendingExternalDirections = ArrayDeque<Int>()
     private var navigationGeneration = 0L
     private var lastEndedMediaId: String? = null
+    private var lastAutoSkippedFailedMediaId: String? = null
+    private val failedTrackSkipPolicy = FailedTrackSkipPolicy()
+    private var lastVerifiedDiscoveryRefreshMs = 0L
+    private var bufferingWatchdog: Runnable? = null
     private var suppressNativeModePersistence = false
     private var automaticPrefetchInFlight = false
     private var pendingAutomaticNextMediaId: String? = null
@@ -261,8 +266,58 @@ class PlaybackService : MediaLibraryService() {
         }
     }
 
+    private fun skipFailedCurrentTrack(mediaId: String, reason: String) {
+        if (mediaId.isBlank() || !PersonalizationSettings.autoSkipFailedTracks.value ||
+            mediaId == lastAutoSkippedFailedMediaId || player?.currentMediaItem?.mediaId != mediaId
+        ) return
+        val restored = playbackSessionStore.restore() ?: return
+        val queue = restored.queueState
+        if (queue.currentSong?.id != mediaId) return
+        lastAutoSkippedFailedMediaId = mediaId
+        val target = failedTrackSkipPolicy.nextIndex(true, queue.currentIndex, queue.songs.size)
+        if (target == null) {
+            AutomaticPlaylistManager.notice.value =
+                "Riproduzione interrotta: nessun brano successivo disponibile o troppi errori consecutivi."
+            return
+        }
+        profileOutcomeSuppressedForMediaId = mediaId
+        loadPersistedIndex(restored, target, reason, mediaId)
+    }
+
+    private fun updateBufferingWatchdog() {
+        bufferingWatchdog?.let(mainHandler::removeCallbacks)
+        bufferingWatchdog = null
+        val current = player ?: return
+        val mediaId = current.currentMediaItem?.mediaId.orEmpty()
+        if (current.playbackState != Player.STATE_BUFFERING || !current.playWhenReady || mediaId.isBlank()) return
+        val watchdog = Runnable {
+            val live = player
+            if (live?.currentMediaItem?.mediaId == mediaId &&
+                live.playWhenReady && live.playbackState == Player.STATE_BUFFERING
+            ) {
+                Log.w("LYRA_PLAYBACK", "bufferingTimeout mediaId=$mediaId")
+                skipFailedCurrentTrack(mediaId, "AUTO_SKIP_BUFFER_TIMEOUT")
+            }
+        }
+        bufferingWatchdog = watchdog
+        mainHandler.postDelayed(watchdog, 60_000L)
+    }
+
     private val playerListener = object : Player.Listener {
+        override fun onPlayerError(error: PlaybackException) {
+            val mediaId = player?.currentMediaItem?.mediaId.orEmpty()
+            Log.w(
+                "LYRA_PLAYBACK",
+                "autoSkipPlaybackError mediaId=$mediaId errorCode=${error.errorCode} " +
+                    "errorName=${error.errorCodeName}",
+                error,
+            )
+            // Media3 reports the error immediately before entering IDLE.
+            mainHandler.post { skipFailedCurrentTrack(mediaId, "AUTO_SKIP_ERROR") }
+        }
+
         override fun onPlaybackStateChanged(playbackState: Int) {
+            updateBufferingWatchdog()
             publishMonitorState()
             val currentPlayer = player ?: return
 
@@ -285,6 +340,8 @@ class PlaybackService : MediaLibraryService() {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             publishMonitorState()
             if (isPlaying) {
+                failedTrackSkipPolicy.reset()
+                lastAutoSkippedFailedMediaId = null
                 recordHistoryForCurrentIfNeeded()
                 ensureProfileTrackingStarted()
                 player?.let(::updateProfileProgress)
@@ -295,6 +352,7 @@ class PlaybackService : MediaLibraryService() {
         }
 
         override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+            updateBufferingWatchdog()
             audioCrossfadeCoordinator?.onMainPlayWhenReadyChanged(playWhenReady)
             val currentPlayer = player ?: return
             // Fallback: se una sessione ripristinata risultasse ancora IDLE, al primo
@@ -333,6 +391,9 @@ class PlaybackService : MediaLibraryService() {
             historyRecordedMediaId = null
 
             val mediaId = mediaItem?.mediaId.orEmpty()
+            if (mediaId != lastAutoSkippedFailedMediaId) {
+                lastAutoSkippedFailedMediaId = null
+            }
             if (mediaId.isBlank()) return
 
             if (player?.isPlaying == true) ensureProfileTrackingStarted()
@@ -1333,6 +1394,25 @@ class PlaybackService : MediaLibraryService() {
                 publishMonitorState()
                 val queue=playbackSessionStore.restore()?.queueState ?: continue
                 val current=player?.currentMediaItem?.mediaId ?: continue
+                val now = SystemClock.elapsedRealtime()
+                if (player?.isPlaying == true && queue.currentSong?.id == current &&
+                    !automaticPrefetchInFlight &&
+                    now - lastVerifiedDiscoveryRefreshMs >= 90_000L &&
+                    AutomaticPlaylistManager.isVerifiedSession(queue.title, queue.songs)
+                ) {
+                    lastVerifiedDiscoveryRefreshMs = now
+                    val added = AutomaticPlaylistManager.insertNewVerifiedSongs(current, queue.songs) {
+                        val live = playbackSessionStore.restore()?.queueState
+                        player?.currentMediaItem?.mediaId == current &&
+                            live?.title == queue.title && live.currentSong?.id == current &&
+                            live.songs.map(Song::id) == queue.songs.map(Song::id)
+                    }
+                    if (added && player?.currentMediaItem?.mediaId == current) {
+                        replacePersistedAutomaticQueue(
+                            AutomaticPlaylistManager.currentSongs(), current, replaceCurrent = false,
+                        )
+                    }
+                }
                 if (queue.currentSong?.id==current && AutomaticPlaylistManager.hasServerIntent()) {
                     val revision=ServerPlaylistClient.revision(queue.songs.map { it.id },queue.title,queue.repeatMode.name,queue.shuffleEnabled)
                     AutomaticPlaylistManager.prepareServerBoundary(current,queue.songs,revision,
@@ -2554,11 +2634,7 @@ class PlaybackService : MediaLibraryService() {
                             expectedCurrentMediaId = pendingId,
                         )
                     } else {
-                        val currentNotice = AutomaticPlaylistManager.notice.value
-                        if (currentNotice == null || currentNotice.startsWith("Cerco ")) {
-                            AutomaticPlaylistManager.notice.value =
-                                "Nessun altro brano verificato disponibile. Riprova più tardi."
-                        }
+                        recoverVerifiedQueue(pendingQueue, pendingId)
                     }
                 }
             }
@@ -2623,7 +2699,10 @@ class PlaybackService : MediaLibraryService() {
             val queue = updated.queueState
             if (queue.currentSong?.id != endedMediaId) return@launch
             val target = queue.currentIndex + 1
-            if (target !in queue.songs.indices) return@launch
+            if (target !in queue.songs.indices) {
+                recoverVerifiedQueue(updated, endedMediaId)
+                return@launch
+            }
             loadPersistedIndex(
                 restored = updated,
                 targetIndex = target,
@@ -2631,6 +2710,23 @@ class PlaybackService : MediaLibraryService() {
                 expectedCurrentMediaId = endedMediaId,
             )
         }
+    }
+
+    private fun recoverVerifiedQueue(restored: RestoredPlaybackSession, currentId: String) {
+        val queue = restored.queueState
+        val target = VerifiedQueueRecovery.targetIndex(
+            AutomaticPlaylistManager.isVerifiedSession(queue.title, queue.songs),
+            queue.currentIndex,
+            queue.songs.size,
+        )
+        if (target == null) {
+            AutomaticPlaylistManager.notice.value =
+                "Nessun altro brano verificato disponibile. Riprova più tardi."
+            return
+        }
+        AutomaticPlaylistManager.notice.value =
+            "Server non disponibile o catalogo esaurito: riprendo i brani verificati già ascoltati."
+        loadPersistedIndex(restored, target, "VERIFIED_LOCAL_RECOVERY", currentId)
     }
 
 
@@ -2959,14 +3055,30 @@ class PlaybackService : MediaLibraryService() {
                     "load ready mediaId=${song.id} index=$targetIndex reason=$reason"
                 )
             }.onFailure { error ->
-                if (generation == navigationGeneration) {
-                    finishExternalNavigation(success = false, reason = reason)
-                }
+                if (error is kotlinx.coroutines.CancellationException) throw error
                 Log.e(
                     "LYRA_EXTERNAL",
                     "load failed mediaId=${song.id} index=$targetIndex reason=$reason message=${error.message}",
                     error,
                 )
+                if (generation != navigationGeneration) return@onFailure
+                finishExternalNavigation(success = false, reason = reason)
+                val live = playbackSessionStore.restore() ?: return@onFailure
+                if (player?.currentMediaItem?.mediaId != expectedCurrentMediaId ||
+                    live.queueState.songs.map { it.id } != restored.queueState.songs.map { it.id } ||
+                    live.queueState.currentIndex != restored.queueState.currentIndex
+                ) return@onFailure
+                val next = failedTrackSkipPolicy.nextIndex(
+                    PersonalizationSettings.autoSkipFailedTracks.value,
+                    targetIndex, live.queueState.songs.size,
+                )
+                if (next == null) {
+                    AutomaticPlaylistManager.notice.value =
+                        "Impossibile caricare ${song.title}. Controlla la connessione o scegli un altro brano."
+                    return@onFailure
+                }
+                profileOutcomeSuppressedForMediaId = expectedCurrentMediaId
+                loadPersistedIndex(live, next, "AUTO_SKIP_RESOLUTION", expectedCurrentMediaId)
             }
         }
     }
@@ -3395,6 +3507,7 @@ class PlaybackService : MediaLibraryService() {
     }
 
     override fun onDestroy() {
+        bufferingWatchdog?.let(mainHandler::removeCallbacks)
         player?.let(::updateProfileProgress)
         finalizeProfileOutcome(completed = false, manualSkip = false)
         AutomaticPlaylistManager.clear()

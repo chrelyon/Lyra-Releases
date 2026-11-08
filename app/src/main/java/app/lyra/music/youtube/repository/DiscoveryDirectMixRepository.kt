@@ -2,6 +2,9 @@ package app.lyra.music.youtube.repository
 
 import app.lyra.music.core.model.Song
 import app.lyra.music.personalization.RecommendationEngine
+import app.lyra.music.personalization.PersonalizationSettings
+import app.lyra.music.genre.VerifiedGenrePlaylistClient
+import app.lyra.music.genre.GenreClassifierSettings
 import com.metrolist.innertube.YouTube
 import com.metrolist.innertube.models.SongItem
 import kotlinx.coroutines.async
@@ -24,7 +27,12 @@ class DiscoveryDirectMixRepository {
     suspend fun build(folderId: String, groupId: String): Result {
         val title = music.getDiscoveryGroups(folderId)
             .firstOrNull { it.id == groupId }?.title ?: "Scopri"
-        val selected = when (folderId) {
+        val selected = if (folderId in setOf("decenni", "novita", "italiane") &&
+            PersonalizationSettings.useServerAlgorithm.value
+        ) {
+            check(GenreClassifierSettings.isConfigured()) { "Server Lyra non configurato" }
+            VerifiedGenrePlaylistClient.fetchCurated(if (folderId == "decenni") groupId else folderId)
+        } else when (folderId) {
             "decenni" -> decadeSongs(groupId)
             "novita" -> NewReleaseDiscovery.mixedSongs()
             "italiane" -> italianSongs()

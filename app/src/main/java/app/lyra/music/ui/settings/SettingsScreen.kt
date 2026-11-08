@@ -121,6 +121,7 @@ fun SettingsScreen(
     val learnFromSkips by PersonalizationSettings.learnFromSkips.collectAsStateWithLifecycle()
     val avoidRepeats by PersonalizationSettings.avoidRepeats.collectAsStateWithLifecycle()
     val continueSimilar by PersonalizationSettings.continueSimilar.collectAsStateWithLifecycle()
+    val autoSkipFailedTracks by PersonalizationSettings.autoSkipFailedTracks.collectAsStateWithLifecycle()
     val genreEnabled by GenreClassifierSettings.enabled.collectAsStateWithLifecycle()
     val serverConnectionEnabled by GenreClassifierSettings.connectionEnabled.collectAsStateWithLifecycle()
     val serverStatus by LyraServerMonitor.status.collectAsStateWithLifecycle()
@@ -317,6 +318,13 @@ fun SettingsScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 10.dp),
+                )
+
+                SettingToggleRow(
+                    title = "Salta i brani non caricabili",
+                    subtitle = "Se la riproduzione di un brano fallisce, Lyra prova ad avviare il successivo. Puoi disattivare questa opzione per gestire gli errori manualmente.",
+                    checked = autoSkipFailedTracks,
+                    onCheckedChange = PersonalizationSettings::setAutoSkipFailedTracks,
                 )
             }
         }

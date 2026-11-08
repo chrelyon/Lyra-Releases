@@ -67,6 +67,56 @@ object AutomaticPlaylistManager {
     fun isActive(): Boolean = session != null
     fun currentSongs(): List<Song> = knownSongs
     fun currentTitle(): String? = session?.title
+    fun isVerifiedSession(title: String, songs: List<Song>): Boolean =
+        session?.let {
+            it.title == title && it.strictGenre != null &&
+                knownSongs.map(Song::id) == songs.map(Song::id)
+        } == true
+
+    suspend fun insertNewVerifiedSongs(
+        currentId: String,
+        expectedSongs: List<Song>,
+        queueStillMatches: () -> Boolean,
+    ): Boolean =
+        mutex.withLock {
+            val current = session ?: return@withLock false
+            val genre = current.strictGenre ?: return@withLock false
+            val expectedIds = expectedSongs.map(Song::id)
+            if (activeMediaId != currentId || knownSongs.map(Song::id) != expectedIds) {
+                return@withLock false
+            }
+            val candidates = try {
+                VerifiedGenrePlaylistClient.fetch(
+                    genre, current.seenIds, limit = 6, externalOnly = true,
+                )
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                Log.w("LYRA_AUTO_PLAYLIST", "discoveryRefreshFailed genre=$genre", error)
+                return@withLock false
+            }
+            if (session !== current || activeMediaId != currentId || !queueStillMatches() ||
+                knownSongs.map(Song::id) != expectedIds
+            ) return@withLock false
+            val index = knownSongs.indexOfFirst { it.id == currentId }
+            if (index < 0) return@withLock false
+            val eligible = candidates.filterNot {
+                it.id in current.seenIds || ListeningProfileStore.isBlocked(it.id)
+            }.distinctBy(Song::id)
+            val fresh = RecommendationEngine.rank(
+                eligible,
+                RecommendationEngine.SessionContext(
+                    title = current.title, contextTag = current.contextTag,
+                    sessionSalt = current.sessionSalt,
+                ),
+            )
+            if (fresh.isEmpty()) return@withLock false
+            knownSongs = knownSongs.take(index + 1) + fresh + knownSongs.drop(index + 1)
+            current.seenIds.addAll(fresh.map(Song::id))
+            AutomaticPlaylistVarietyStore.remember(genre, emptyList(), fresh, recordOpening = false)
+            notice.value = "Aggiunte ${fresh.size} nuove proposte verificate."
+            true
+        }
     @Synchronized
     fun skippedArtistKeys(): Set<String> = session?.skippedArtists?.toSet().orEmpty()
 

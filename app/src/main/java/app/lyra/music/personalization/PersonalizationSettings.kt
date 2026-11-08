@@ -16,6 +16,7 @@ object PersonalizationSettings {
     private const val KEY_LEARN_SKIPS = "learn_skips"
     private const val KEY_AVOID_REPEATS = "avoid_repeats"
     private const val KEY_CONTINUE_SIMILAR = "continue_similar"
+    private const val KEY_AUTO_SKIP_FAILED_TRACKS = "auto_skip_failed_tracks"
 
     enum class DiscoveryLevel(val exploration: Double) {
         CONSERVATIVE(0.10),
@@ -50,6 +51,9 @@ object PersonalizationSettings {
     private val _continueSimilar = MutableStateFlow(true)
     val continueSimilar: StateFlow<Boolean> = _continueSimilar.asStateFlow()
 
+    private val _autoSkipFailedTracks = MutableStateFlow(true)
+    val autoSkipFailedTracks: StateFlow<Boolean> = _autoSkipFailedTracks.asStateFlow()
+
     fun initialize(context: Context) {
         appContext = context.applicationContext
         val prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -66,6 +70,7 @@ object PersonalizationSettings {
         _learnFromSkips.value = prefs.getBoolean(KEY_LEARN_SKIPS, true)
         _avoidRepeats.value = prefs.getBoolean(KEY_AVOID_REPEATS, true)
         _continueSimilar.value = prefs.getBoolean(KEY_CONTINUE_SIMILAR, true)
+        _autoSkipFailedTracks.value = prefs.getBoolean(KEY_AUTO_SKIP_FAILED_TRACKS, true)
     }
 
     fun setEnabled(value: Boolean) = update(KEY_ENABLED, value) { _enabled.value = value }
@@ -75,6 +80,8 @@ object PersonalizationSettings {
     fun setLearnFromSkips(value: Boolean) = update(KEY_LEARN_SKIPS, value) { _learnFromSkips.value = value }
     fun setAvoidRepeats(value: Boolean) = update(KEY_AVOID_REPEATS, value) { _avoidRepeats.value = value }
     fun setContinueSimilar(value: Boolean) = update(KEY_CONTINUE_SIMILAR, value) { _continueSimilar.value = value }
+    fun setAutoSkipFailedTracks(value: Boolean) =
+        update(KEY_AUTO_SKIP_FAILED_TRACKS, value) { _autoSkipFailedTracks.value = value }
 
     fun setDiscoveryLevel(value: DiscoveryLevel) {
         if (!::appContext.isInitialized) return

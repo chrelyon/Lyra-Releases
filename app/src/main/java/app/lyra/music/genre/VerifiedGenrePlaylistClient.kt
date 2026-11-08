@@ -36,6 +36,7 @@ object VerifiedGenrePlaylistClient {
         preset: String,
         excludeIds: Collection<String> = emptyList(),
         limit: Int = 40,
+        externalOnly: Boolean = false,
     ): List<Song> = withContext(Dispatchers.IO) {
         require(supported(preset)) { "Preset non supportato per la playlist verificata" }
         require(limit in 1..50) { "Limite brani non valido" }
@@ -50,6 +51,7 @@ object VerifiedGenrePlaylistClient {
             .put("genre", preset)
             .put("limit", limit)
             .put("include_external", true)
+            .put("external_only", externalOnly)
             .put("exclude_ids", JSONArray(excludeIds.filter(videoId::matches)
                 .distinct().takeLast(100)))
 
@@ -75,6 +77,9 @@ object VerifiedGenrePlaylistClient {
                     if (body.length > 90_000) throw IllegalStateException("Risposta server eccessiva")
                     val parsed = parseVerifiedTracks(body, preset)
                     val response = JSONObject(body)
+                    if (externalOnly && !response.optBoolean("external_only")) {
+                        throw IllegalStateException("Aggiorna il server Lyra per le nuove proposte progressive")
+                    }
                     val rows = response.optJSONArray("tracks") ?: JSONArray()
                     val evidence = (0 until minOf(rows.length(), 8)).mapNotNull { index ->
                         val item = rows.optJSONObject(index) ?: return@mapNotNull null
@@ -93,7 +98,7 @@ object VerifiedGenrePlaylistClient {
                             "externalDiscovery=${response.optBoolean("external_discovery", false)} " +
                             "evidence=$evidence",
                     )
-                    parsed.ifEmpty {
+                    if (externalOnly) parsed else parsed.ifEmpty {
                         throw IllegalStateException(
                             "Nessun brano $preset verificato: Lyra non inserisce generi casuali"
                         )
@@ -103,6 +108,66 @@ object VerifiedGenrePlaylistClient {
                 404 -> throw IllegalStateException("Aggiorna il server Lyra: API playlist verificata assente")
                 else -> throw IllegalStateException("Playlist Lyra non disponibile (HTTP $code)")
             }
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    suspend fun fetchCurated(category: String): List<Song> = withContext(Dispatchers.IO) {
+        require(category in setOf("novita", "italiane", "80s", "90s", "2000s", "2010s", "2020s"))
+        val token = GenreClassifierSettings.token()
+            ?: throw IllegalStateException("Token Lyra non configurato")
+        val base = GenreClassifierSettings.SERVER_URL
+        check(GenreDecisionPolicy.validEndpoint(base)) { "Endpoint Lyra non attendibile" }
+        val connection = URL("$base/v1/playlists/curated").openConnection() as HttpURLConnection
+        try {
+            connection.requestMethod = "POST"
+            connection.connectTimeout = 4_000
+            connection.readTimeout = 60_000
+            connection.useCaches = false
+            connection.instanceFollowRedirects = false
+            connection.doOutput = true
+            connection.setRequestProperty("Content-Type", "application/json")
+            connection.setRequestProperty("Authorization", "Bearer $token")
+            val payload = JSONObject().put("category", category).put("limit", 40)
+                .put("include_external", true)
+            connection.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
+            val code = connection.responseCode
+            check(code == 200) { "Playlist Lyra non disponibile (HTTP $code)" }
+            val text = connection.inputStream.bufferedReader().use { reader ->
+                val buffer = CharArray(90_001)
+                var count = 0
+                while (count < buffer.size) {
+                    val read = reader.read(buffer, count, buffer.size - count)
+                    if (read < 0) break
+                    count += read
+                }
+                check(count <= 90_000) { "Risposta server eccessiva" }
+                String(buffer, 0, count)
+            }
+            val body = JSONObject(text)
+            check(body.optString("category") == category) { "Risposta playlist non valida" }
+            val tracks = body.optJSONArray("tracks") ?: JSONArray()
+            val songs = (0 until minOf(tracks.length(), 50)).mapNotNull { index ->
+                val row = tracks.optJSONObject(index) ?: return@mapNotNull null
+                val id = row.optString("id")
+                val title = row.optString("title").trim()
+                val artist = row.optString("artist").trim()
+                if (!videoId.matches(id) || title.isBlank() || artist.isBlank()) return@mapNotNull null
+                Song(
+                    id = id,
+                    title = title,
+                    artist = artist,
+                    durationSeconds = 0L,
+                    thumbnailUrl = approvedArtworkUrl(row.optString("thumbnailUrl")),
+                )
+            }.distinctBy { it.id }
+            check(songs.isNotEmpty()) { "Nessun brano verificato disponibile per $category" }
+            if (body.optString("status") == "partial") {
+                app.lyra.music.playback.AutomaticPlaylistManager.notice.value =
+                    "Proposte esterne non disponibili: uso i brani verificati nel catalogo."
+            }
+            songs
         } finally {
             connection.disconnect()
         }

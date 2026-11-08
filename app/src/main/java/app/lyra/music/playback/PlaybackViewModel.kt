@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import app.lyra.music.core.model.Song
 import app.lyra.music.audio.AudioSettings
 import app.lyra.music.personalization.PersonalizedMixEngine
+import app.lyra.music.personalization.PersonalizationSettings
 import app.lyra.music.youtube.repository.DiscoveryDirectMixRepository
 import app.lyra.music.youtube.likes.YouTubeLikesManager
 import kotlinx.coroutines.Dispatchers
@@ -56,12 +57,18 @@ class PlaybackViewModel(
     private var lastKnownPositionMs = 0L
     private var lastPersistedPositionMs = 0L
     private var lastExternalSyncLogKey: String? = null
+    private val failedTrackSkipPolicy = FailedTrackSkipPolicy()
+    private var lastPlayingMediaId: String? = null
 
     init {
         restorePersistedSession()
 
         viewModelScope.launch {
             uiState.collect { state ->
+                if (state.isPlaying && state.mediaId != lastPlayingMediaId) {
+                    lastPlayingMediaId = state.mediaId
+                    failedTrackSkipPolicy.reset()
+                }
                 checkpointPlaybackPosition(state)
                 syncQueueWithSessionPlayer(state)
                 syncAutomaticQueueFromManager()
@@ -109,6 +116,7 @@ class PlaybackViewModel(
         allowSmartContinuation: Boolean = true,
     ) {
         if (songs.isEmpty() || startIndex !in songs.indices) return
+        failedTrackSkipPolicy.reset()
         if (!preserveAutomaticSession) {
             automaticGeneration++
             AutomaticPlaylistManager.clear()
@@ -523,6 +531,17 @@ class PlaybackViewModel(
                     AutomaticPlaylistManager.notice.value = null
                     playQueueIndex(updated.currentIndex + 1, reason = "NEXT_AUTO_REFILL")
                 } else {
+                    val recovery = VerifiedQueueRecovery.targetIndex(
+                        AutomaticPlaylistManager.isVerifiedSession(updated.title, updated.songs),
+                        updated.currentIndex,
+                        updated.songs.size,
+                    )
+                    if (recovery != null) {
+                        AutomaticPlaylistManager.notice.value =
+                            "Server non disponibile o catalogo esaurito: riprendo i brani verificati già ascoltati."
+                        playQueueIndex(recovery, reason = "NEXT_AUTO_LOCAL_RECOVERY")
+                        return@launch
+                    }
                     val detail = AutomaticPlaylistManager.notice.value
                     if (detail == null || detail.startsWith("Cerco ")) {
                         AutomaticPlaylistManager.notice.value =
@@ -880,7 +899,9 @@ class PlaybackViewModel(
             }
 
             runCatching {
-                playbackRepository.getPlaybackSource(song.id)
+                kotlinx.coroutines.withTimeoutOrNull(60_000L) {
+                    playbackRepository.getPlaybackSource(song.id)
+                } ?: throw IllegalStateException("Tempo di caricamento della sorgente audio scaduto")
             }.onSuccess { source ->
                 if (generation != loadGeneration) {
                     Log.d(
@@ -933,14 +954,26 @@ class PlaybackViewModel(
         reason: String,
         error: Throwable,
     ) {
-        if (generation == loadGeneration) {
-            _queueState.value = _queueState.value.copy(isChangingTrack = false)
-        }
+        if (error is kotlinx.coroutines.CancellationException) throw error
+        if (generation != loadGeneration) return
+        _queueState.value = _queueState.value.copy(isChangingTrack = false)
         Log.e(
             if (song.isLocal) "LYRA_LOCAL" else "LYRA_STREAM",
             "loadFailed id=${song.id} queueIndex=$targetIndex reason=$reason message=${error.message}",
             error,
         )
+        val queue = _queueState.value
+        if (queue.songs.getOrNull(targetIndex)?.id != song.id) return
+        val next = failedTrackSkipPolicy.nextIndex(
+            PersonalizationSettings.autoSkipFailedTracks.value, targetIndex, queue.songs.size,
+        )
+        if (next == null) {
+            _queueNotice.value = "Impossibile caricare ${song.title}. Controlla la connessione o scegli un altro brano."
+            return
+        }
+        _queueNotice.value = "Impossibile caricare ${song.title}: provo il brano successivo."
+        _queueState.value = queue.copy(isChangingTrack = true)
+        resolveAndPlay(queue.songs[next], next, "AUTO_SKIP_LOAD_FAILURE")
     }
 
     fun pause() {
