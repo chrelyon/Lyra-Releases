@@ -93,6 +93,7 @@ object AutomaticPlaylistManager {
                 throw cancelled
             } catch (error: Exception) {
                 Log.w("LYRA_AUTO_PLAYLIST", "discoveryRefreshFailed genre=$genre", error)
+                notice.value = "Impossibile contattare la discovery Lyra; la ricerca riproverà automaticamente."
                 return@withLock false
             }
             if (session !== current || !queueStillMatches() ||
@@ -328,10 +329,13 @@ object AutomaticPlaylistManager {
                                 "excludedByRanking=${selected.size - ranked.size}",
                         )
                         if (queue.isEmpty()) throw NoVerifiedCandidatesException()
+                        val discoveryNotice = notice.value
                         notice.value = when (queue.size) {
-                            1 -> "Playlist incompleta: soltanto 1 brano verificato per ${preset.title}."
-                            in 2..4 -> "Catalogo ${preset.title} limitato: solo ${queue.size} brani verificati."
-                            else -> null
+                            1 -> "Playlist incompleta: soltanto 1 brano verificato per ${preset.title}." +
+                                discoveryNotice?.let { " $it" }.orEmpty()
+                            in 2..4 -> "Catalogo ${preset.title} limitato: solo ${queue.size} brani verificati." +
+                                discoveryNotice?.let { " $it" }.orEmpty()
+                            else -> discoveryNotice
                         }
                         remote?.invalidate()
                         remote = null

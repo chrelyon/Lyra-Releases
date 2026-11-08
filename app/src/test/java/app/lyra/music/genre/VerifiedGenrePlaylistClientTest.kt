@@ -41,4 +41,21 @@ class VerifiedGenrePlaylistClientTest {
         assertNull(VerifiedGenrePlaylistClient.approvedArtworkUrl("https://i.ytimg.com:12345/cover"))
         assertNull(VerifiedGenrePlaylistClient.approvedArtworkUrl(null))
     }
+
+    @Test fun explainsProgressiveDiscoveryStatusWithoutClaimingUnavailableProposals() {
+        assertTrue(
+            VerifiedGenrePlaylistClient.discoveryNotice("pending", false)
+                ?.contains("si aggiornerà automaticamente") == true,
+        )
+        assertTrue(
+            VerifiedGenrePlaylistClient.discoveryNotice("lastfm_not_configured", false)
+                ?.contains("configurazione Last.fm") == true,
+        )
+        assertTrue(
+            VerifiedGenrePlaylistClient.discoveryNotice("provider_unavailable", false)
+                ?.contains("riproverà automaticamente") == true,
+        )
+        assertNull(VerifiedGenrePlaylistClient.discoveryNotice("ok", true))
+        assertNull(VerifiedGenrePlaylistClient.discoveryNotice("unknown", false))
+    }
 }

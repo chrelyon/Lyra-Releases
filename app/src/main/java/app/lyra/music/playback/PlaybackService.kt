@@ -1390,14 +1390,14 @@ class PlaybackService : MediaLibraryService() {
         }
         serviceScope.launch {
             while (true) {
-                kotlinx.coroutines.delay(30_000)
+                kotlinx.coroutines.delay(15_000)
                 publishMonitorState()
                 val queue=playbackSessionStore.restore()?.queueState ?: continue
                 val current=player?.currentMediaItem?.mediaId ?: continue
                 val now = SystemClock.elapsedRealtime()
                 if (player?.isPlaying == true && queue.currentSong?.id == current &&
                     !automaticPrefetchInFlight &&
-                    now - lastVerifiedDiscoveryRefreshMs >= 30_000L &&
+                    now - lastVerifiedDiscoveryRefreshMs >= 15_000L &&
                     AutomaticPlaylistManager.isVerifiedSession(queue.title, queue.songs)
                 ) {
                     lastVerifiedDiscoveryRefreshMs = now

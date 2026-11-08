@@ -81,6 +81,12 @@ object VerifiedGenrePlaylistClient {
                         throw IllegalStateException("Aggiorna il server Lyra per le nuove proposte progressive")
                     }
                     val rows = response.optJSONArray("tracks") ?: JSONArray()
+                    val externalStatus = response.optString("external_status", "unknown")
+                    app.lyra.music.playback.AutomaticPlaylistManager.notice.value =
+                        discoveryNotice(
+                            externalStatus,
+                            response.optBoolean("external_discovery") || parsed.isNotEmpty(),
+                        )
                     val evidence = (0 until minOf(rows.length(), 8)).mapNotNull { index ->
                         val item = rows.optJSONObject(index) ?: return@mapNotNull null
                         val id = item.optString("id").takeIf(videoId::matches)
@@ -94,7 +100,7 @@ object VerifiedGenrePlaylistClient {
                         "verifiedResponse genre=$preset requested=$limit " +
                             "serverSelected=${response.optInt("selected_count", rows.length())} " +
                             "serverVerified=${response.optInt("verified_count", -1)} " +
-                            "parsed=${parsed.size} externalStatus=${response.optString("external_status", "none")} " +
+                            "parsed=${parsed.size} externalStatus=$externalStatus " +
                             "externalDiscovery=${response.optBoolean("external_discovery", false)} " +
                             "evidence=$evidence",
                     )
@@ -110,6 +116,23 @@ object VerifiedGenrePlaylistClient {
             }
         } finally {
             connection.disconnect()
+        }
+    }
+
+    internal fun discoveryNotice(status: String, hasProposals: Boolean): String? {
+        if (hasProposals) return null
+        return when (status) {
+            "pending", "already_running", "partial" ->
+                "Ricerca di nuove proposte verificate in corso; la coda si aggiornerà automaticamente."
+            "disabled", "lastfm_not_configured" ->
+                "La discovery esterna non è attiva sul server: verifica la configurazione Last.fm."
+            "daily_budget_exhausted" ->
+                "Limite giornaliero della discovery raggiunto; la ricerca riprenderà domani."
+            "provider_unavailable", "provider_error" ->
+                "Il provider della discovery non è disponibile; il server riproverà automaticamente."
+            "no_verified_matches" ->
+                "Nessuna nuova proposta ha superato i controlli; il server riproverà automaticamente."
+            else -> null
         }
     }
 

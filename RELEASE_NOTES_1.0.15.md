@@ -5,6 +5,8 @@ riproduzione, senza attendere la fine della coda. Serve il server 0.3.38 o
 successivo; se la discovery non produce brani verificati, la quota di novità
 può essere inferiore all'obiettivo. I brani scoperti vengono registrati nel
 catalogo prima di essere consegnati.
+La schermata di riproduzione indica anche se la discovery è in corso, disattiva,
+senza risultati verificabili o temporaneamente non disponibile.
 
 L'opzione **Salta i brani non caricabili**, attiva per default e modificabile
 nelle impostazioni di riproduzione, passa al brano successivo anche quando
