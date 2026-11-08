@@ -1397,7 +1397,7 @@ class PlaybackService : MediaLibraryService() {
                 val now = SystemClock.elapsedRealtime()
                 if (player?.isPlaying == true && queue.currentSong?.id == current &&
                     !automaticPrefetchInFlight &&
-                    now - lastVerifiedDiscoveryRefreshMs >= 90_000L &&
+                    now - lastVerifiedDiscoveryRefreshMs >= 30_000L &&
                     AutomaticPlaylistManager.isVerifiedSession(queue.title, queue.songs)
                 ) {
                     lastVerifiedDiscoveryRefreshMs = now

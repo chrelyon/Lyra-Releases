@@ -82,7 +82,7 @@ object AutomaticPlaylistManager {
             val current = session ?: return@withLock false
             val genre = current.strictGenre ?: return@withLock false
             val expectedIds = expectedSongs.map(Song::id)
-            if (activeMediaId != currentId || knownSongs.map(Song::id) != expectedIds) {
+            if (knownSongs.map(Song::id) != expectedIds || !queueStillMatches()) {
                 return@withLock false
             }
             val candidates = try {
@@ -95,7 +95,7 @@ object AutomaticPlaylistManager {
                 Log.w("LYRA_AUTO_PLAYLIST", "discoveryRefreshFailed genre=$genre", error)
                 return@withLock false
             }
-            if (session !== current || activeMediaId != currentId || !queueStillMatches() ||
+            if (session !== current || !queueStillMatches() ||
                 knownSongs.map(Song::id) != expectedIds
             ) return@withLock false
             val index = knownSongs.indexOfFirst { it.id == currentId }
