@@ -280,7 +280,6 @@ class PlaybackService : MediaLibraryService() {
                 "Riproduzione interrotta: nessun brano successivo disponibile o troppi errori consecutivi."
             return
         }
-        profileOutcomeSuppressedForMediaId = mediaId
         loadPersistedIndex(restored, target, reason, mediaId)
     }
 
@@ -372,6 +371,7 @@ class PlaybackService : MediaLibraryService() {
         }
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            updateBufferingWatchdog()
             val previousId = profileMediaId
             var feedback: AutomaticPlaylistManager.FeedbackResult? = null
             if (!previousId.isNullOrBlank()) {
@@ -3035,6 +3035,9 @@ class PlaybackService : MediaLibraryService() {
                     positionMs = 0L,
                 )
 
+                if (reason.startsWith("AUTO_SKIP_")) {
+                    profileOutcomeSuppressedForMediaId = expectedCurrentMediaId
+                }
                 player?.apply {
                     if (AudioSettings.gaplessEnabled.value && mediaItemCount > 1 && newQueue.songs.size > 1) {
                         val updatedItems = newQueue.songs.mapIndexed { index, candidate ->
@@ -3077,7 +3080,6 @@ class PlaybackService : MediaLibraryService() {
                         "Impossibile caricare ${song.title}. Controlla la connessione o scegli un altro brano."
                     return@onFailure
                 }
-                profileOutcomeSuppressedForMediaId = expectedCurrentMediaId
                 loadPersistedIndex(live, next, "AUTO_SKIP_RESOLUTION", expectedCurrentMediaId)
             }
         }
