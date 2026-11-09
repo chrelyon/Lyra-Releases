@@ -17,6 +17,8 @@ import java.net.URL
  * request into a broad electronic playlist on network/provider errors.
  */
 object VerifiedGenrePlaylistClient {
+    data class Result(val songs: List<Song>, val notice: String?)
+
     private val genrePresets = setOf(
         "pop", "rock", "rap", "dance", "house", "techno", "edm",
         "indie", "rnb", "metal", "jazz", "blues", "reggae", "classica",
@@ -37,7 +39,14 @@ object VerifiedGenrePlaylistClient {
         excludeIds: Collection<String> = emptyList(),
         limit: Int = 40,
         externalOnly: Boolean = false,
-    ): List<Song> = withContext(Dispatchers.IO) {
+    ): List<Song> = fetchWithStatus(preset, excludeIds, limit, externalOnly).songs
+
+    suspend fun fetchWithStatus(
+        preset: String,
+        excludeIds: Collection<String> = emptyList(),
+        limit: Int = 40,
+        externalOnly: Boolean = false,
+    ): Result = withContext(Dispatchers.IO) {
         require(supported(preset)) { "Preset non supportato per la playlist verificata" }
         require(limit in 1..50) { "Limite brani non valido" }
         val token = GenreClassifierSettings.token()
@@ -82,11 +91,7 @@ object VerifiedGenrePlaylistClient {
                     }
                     val rows = response.optJSONArray("tracks") ?: JSONArray()
                     val externalStatus = response.optString("external_status", "unknown")
-                    app.lyra.music.playback.AutomaticPlaylistManager.notice.value =
-                        discoveryNotice(
-                            externalStatus,
-                            response.optBoolean("external_discovery") || parsed.isNotEmpty(),
-                        )
+                    val notice = discoveryNotice(externalStatus, response.optInt("new_count", 0) > 0)
                     val evidence = (0 until minOf(rows.length(), 8)).mapNotNull { index ->
                         val item = rows.optJSONObject(index) ?: return@mapNotNull null
                         val id = item.optString("id").takeIf(videoId::matches)
@@ -104,11 +109,12 @@ object VerifiedGenrePlaylistClient {
                             "externalDiscovery=${response.optBoolean("external_discovery", false)} " +
                             "evidence=$evidence",
                     )
-                    if (externalOnly) parsed else parsed.ifEmpty {
+                    if (!externalOnly && parsed.isEmpty()) {
                         throw IllegalStateException(
                             "Nessun brano $preset verificato: Lyra non inserisce generi casuali"
                         )
                     }
+                    Result(parsed, notice)
                 }
                 401, 403 -> throw IllegalStateException("Token Lyra non autorizzato")
                 404 -> throw IllegalStateException("Aggiorna il server Lyra: API playlist verificata assente")

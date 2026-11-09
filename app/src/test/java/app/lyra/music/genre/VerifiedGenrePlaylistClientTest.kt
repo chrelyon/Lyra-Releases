@@ -56,6 +56,10 @@ class VerifiedGenrePlaylistClientTest {
                 ?.contains("riproverà automaticamente") == true,
         )
         assertNull(VerifiedGenrePlaylistClient.discoveryNotice("ok", true))
+        assertTrue(
+            VerifiedGenrePlaylistClient.discoveryNotice("disabled", false)
+                ?.contains("configurazione Last.fm") == true,
+        )
         assertNull(VerifiedGenrePlaylistClient.discoveryNotice("unknown", false))
     }
 }

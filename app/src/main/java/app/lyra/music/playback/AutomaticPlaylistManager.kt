@@ -85,23 +85,26 @@ object AutomaticPlaylistManager {
             if (knownSongs.map(Song::id) != expectedIds || !queueStillMatches()) {
                 return@withLock false
             }
-            val candidates = try {
-                VerifiedGenrePlaylistClient.fetch(
+            val result = try {
+                VerifiedGenrePlaylistClient.fetchWithStatus(
                     genre, current.seenIds, limit = 6, externalOnly = true,
                 )
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
                 Log.w("LYRA_AUTO_PLAYLIST", "discoveryRefreshFailed genre=$genre", error)
-                notice.value = "Impossibile contattare la discovery Lyra; la ricerca riproverà automaticamente."
+                if (session === current && queueStillMatches()) {
+                    notice.value = "Impossibile contattare la discovery Lyra; la ricerca riproverà automaticamente."
+                }
                 return@withLock false
             }
             if (session !== current || !queueStillMatches() ||
                 knownSongs.map(Song::id) != expectedIds
             ) return@withLock false
+            notice.value = result.notice
             val index = knownSongs.indexOfFirst { it.id == currentId }
             if (index < 0) return@withLock false
-            val eligible = candidates.filterNot {
+            val eligible = result.songs.filterNot {
                 it.id in current.seenIds || ListeningProfileStore.isBlocked(it.id)
             }.distinctBy(Song::id)
             val fresh = RecommendationEngine.rank(
@@ -289,7 +292,7 @@ object AutomaticPlaylistManager {
                 }
             } else {
                 val selected = try {
-                    VerifiedGenrePlaylistClient.fetch(presetId, limit = 40)
+                    VerifiedGenrePlaylistClient.fetchWithStatus(presetId, limit = 40)
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (error: Exception) {
@@ -311,7 +314,7 @@ object AutomaticPlaylistManager {
                         val title = "Playlist Automatica · ${preset.title}"
                         val salt = System.currentTimeMillis() xor System.nanoTime()
                         val ranked = RecommendationEngine.rank(
-                            candidates = selected,
+                            candidates = selected.songs,
                             context = RecommendationEngine.SessionContext(
                                 title = title, contextTag = preset.id, sessionSalt = salt,
                             ),
@@ -324,12 +327,12 @@ object AutomaticPlaylistManager {
                         )
                         Log.d(
                             "LYRA_AUTO_PLAYLIST",
-                            "verifiedStart preset=$presetId mood=$isMood serverItems=${selected.size} " +
+                            "verifiedStart preset=$presetId mood=$isMood serverItems=${selected.songs.size} " +
                                 "ranked=${ranked.size} playable=${queue.size} " +
-                                "excludedByRanking=${selected.size - ranked.size}",
+                                "excludedByRanking=${selected.songs.size - ranked.size}",
                         )
                         if (queue.isEmpty()) throw NoVerifiedCandidatesException()
-                        val discoveryNotice = notice.value
+                        val discoveryNotice = selected.notice
                         notice.value = when (queue.size) {
                             1 -> "Playlist incompleta: soltanto 1 brano verificato per ${preset.title}." +
                                 discoveryNotice?.let { " $it" }.orEmpty()
