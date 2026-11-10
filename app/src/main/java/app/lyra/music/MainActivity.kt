@@ -276,7 +276,6 @@ class MainActivity : ComponentActivity() {
                                         }
                                     },
                                     onSeekTo = playbackViewModel::seekTo,
-                                    onStop = playbackViewModel::stop,
                                 )
                             }
 
