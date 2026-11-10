@@ -121,7 +121,6 @@ class PlaybackService : MediaLibraryService() {
     private var lastEndedMediaId: String? = null
     private var lastAutoSkippedFailedMediaId: String? = null
     private val failedTrackSkipPolicy = FailedTrackSkipPolicy()
-    private var lastVerifiedDiscoveryRefreshMs = 0L
     private var bufferingWatchdog: Runnable? = null
     private var suppressNativeModePersistence = false
     private var automaticPrefetchInFlight = false
@@ -405,7 +404,7 @@ class PlaybackService : MediaLibraryService() {
             syncPersistedQueueToCurrentMedia(mediaId)
             feedback?.let { handleAutomaticSessionFeedback(mediaId, it) }
             synchronizeServerPlaylistAtBoundary(previousId, mediaId)
-            maybePrefetchAutomaticQueue(mediaId)
+            maybePrefetchAutomaticQueue(mediaId, reason)
             preResolveUpcomingAudio(mediaId)
             currentSongForLike()?.takeIf { !it.isLocal }?.let { song ->
                 YouTubeLikesManager.refreshId(song.id)
@@ -1394,25 +1393,6 @@ class PlaybackService : MediaLibraryService() {
                 publishMonitorState()
                 val queue=playbackSessionStore.restore()?.queueState ?: continue
                 val current=player?.currentMediaItem?.mediaId ?: continue
-                val now = SystemClock.elapsedRealtime()
-                if (player?.isPlaying == true && queue.currentSong?.id == current &&
-                    !automaticPrefetchInFlight &&
-                    now - lastVerifiedDiscoveryRefreshMs >= 15_000L &&
-                    AutomaticPlaylistManager.isVerifiedSession(queue.title, queue.songs)
-                ) {
-                    lastVerifiedDiscoveryRefreshMs = now
-                    val added = AutomaticPlaylistManager.insertNewVerifiedSongs(current, queue.songs) {
-                        val live = playbackSessionStore.restore()?.queueState
-                        player?.currentMediaItem?.mediaId == current &&
-                            live?.title == queue.title && live.currentSong?.id == current &&
-                            live.songs.map(Song::id) == queue.songs.map(Song::id)
-                    }
-                    if (added && player?.currentMediaItem?.mediaId == current) {
-                        replacePersistedAutomaticQueue(
-                            AutomaticPlaylistManager.currentSongs(), current, replaceCurrent = false,
-                        )
-                    }
-                }
                 if (queue.currentSong?.id==current && AutomaticPlaylistManager.hasServerIntent()) {
                     val revision=ServerPlaylistClient.revision(queue.songs.map { it.id },queue.title,queue.repeatMode.name,queue.shuffleEnabled)
                     AutomaticPlaylistManager.prepareServerBoundary(current,queue.songs,revision,
@@ -2595,14 +2575,32 @@ class PlaybackService : MediaLibraryService() {
         }
     }
 
-    private fun maybePrefetchAutomaticQueue(currentMediaId: String) {
-        if (!AutomaticPlaylistManager.isActive() || automaticPrefetchInFlight) return
-        val restored = playbackSessionStore.restore() ?: return
-        val queue = restored.queueState
-        if (!queue.hasQueue || queue.currentSong?.id != currentMediaId) return
-        if (queue.repeatMode!=PlaybackRepeatMode.OFF || queue.shuffleEnabled) return
-        val remaining = queue.songs.lastIndex - queue.currentIndex
-        if (remaining > AUTOMATIC_PREFETCH_THRESHOLD) return
+    private fun maybePrefetchAutomaticQueue(currentMediaId: String, transitionReason: Int) {
+        val queue = playbackSessionStore.restore()?.queueState
+        val active = AutomaticPlaylistManager.isActive()
+        if (!active && queue?.title?.startsWith("Playlist Automatica · ") != true) return
+
+        val remaining = queue?.let { it.songs.lastIndex - it.currentIndex }
+        val trigger = when (transitionReason) {
+            Player.MEDIA_ITEM_TRANSITION_REASON_AUTO -> "auto"
+            Player.MEDIA_ITEM_TRANSITION_REASON_SEEK -> "seek"
+            Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT -> "repeat"
+            else -> "playlist_changed"
+        }
+        val reason = when {
+            !active -> "session_inactive"
+            automaticPrefetchInFlight -> "request_in_flight"
+            queue == null || !queue.hasQueue -> "queue_missing"
+            queue.currentSong?.id != currentMediaId -> "queue_mismatch"
+            queue.repeatMode != PlaybackRepeatMode.OFF -> "repeat_enabled"
+            queue.shuffleEnabled -> "shuffle_enabled"
+            remaining != null && remaining > AUTOMATIC_PREFETCH_THRESHOLD -> "above_threshold"
+            else -> "request"
+        }
+        Log.d("LYRA_AUTO_PLAYLIST",
+            "refillDecision trigger=$trigger position=${queue?.currentIndex?.plus(1)} " +
+                "size=${queue?.songs?.size} remaining=$remaining reason=$reason")
+        if (reason != "request") return
 
         automaticPrefetchInFlight = true
         serviceScope.launch {
@@ -2770,9 +2768,16 @@ class PlaybackService : MediaLibraryService() {
     }
 
     private fun requestAutomaticAdvance(endedMediaId: String) {
-        val restored = playbackSessionStore.restore() ?: return
-        val queue = restored.queueState
-        if (!queue.hasQueue || queue.currentSong?.id != endedMediaId) return
+        val restored = playbackSessionStore.restore()
+        val queue = restored?.queueState
+        if (AutomaticPlaylistManager.isActive() || queue?.title?.startsWith("Playlist Automatica · ") == true) {
+            Log.d("LYRA_AUTO_PLAYLIST",
+                "queueEndCheck active=${AutomaticPlaylistManager.isActive()} " +
+                    "queueMatches=${queue?.currentSong?.id == endedMediaId} " +
+                    "position=${queue?.currentIndex?.plus(1)} size=${queue?.songs?.size} " +
+                    "repeat=${queue?.repeatMode} inFlight=$automaticPrefetchInFlight")
+        }
+        if (restored == null || queue == null || !queue.hasQueue || queue.currentSong?.id != endedMediaId) return
 
         val targetIndex = when (queue.repeatMode) {
             PlaybackRepeatMode.ONE -> queue.currentIndex
@@ -3546,7 +3551,7 @@ class PlaybackService : MediaLibraryService() {
 
     private companion object {
         const val POSITION_CHECKPOINT_MS = 2_000L
-        const val AUTOMATIC_PREFETCH_THRESHOLD = 4
+        const val AUTOMATIC_PREFETCH_THRESHOLD = 5
         const val AUTO_SEEK_VERIFY_DELAY_MS = 400L
         const val MAX_PENDING_NAVIGATION_COMMANDS = 3
         const val SESSION_ACTIVITY_REQUEST_CODE = 3008

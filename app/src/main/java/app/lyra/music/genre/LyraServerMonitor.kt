@@ -14,7 +14,10 @@ import kotlinx.coroutines.launch
 /** Non-blocking app-wide server monitoring. No networking on the main thread. */
 object LyraServerMonitor {
     enum class Status { CHECKING, ONLINE, OFFLINE, DISABLED }
-    private const val POLLING_MS = 5 * 60 * 1000L
+    private const val BACKGROUND_POLLING_MS = 5 * 60 * 1000L
+    private const val PLAYER_POLLING_MS = 15_000L
+    private const val PLAYER_RETRY_MS = 5_000L
+    @Volatile private var playerVisible = false
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val requests = Channel<Unit>(Channel.CONFLATED)
     private val _status = MutableStateFlow(Status.CHECKING)
@@ -29,20 +32,31 @@ object LyraServerMonitor {
                 if (!GenreClassifierSettings.connectionEnabled.value) {
                     change(Status.DISABLED)
                 } else {
-                    change(Status.CHECKING)
                     val checked = GenreClassifierClient.probeHealth()
-                    change(if (checked is GenreClassifierClient.ConnectionCheck.Ready)
-                        Status.ONLINE else Status.OFFLINE)
+                    change(when {
+                        !GenreClassifierSettings.connectionEnabled.value -> Status.DISABLED
+                        checked is GenreClassifierClient.ConnectionCheck.Ready -> Status.ONLINE
+                        else -> Status.OFFLINE
+                    })
                 }
-                // Wake immediately when the user changes the setting; otherwise recheck every 5 minutes.
-                withTimeoutOrNull(POLLING_MS) { requests.receive() }
+                val interval = when {
+                    !playerVisible || _status.value == Status.DISABLED -> BACKGROUND_POLLING_MS
+                    _status.value == Status.OFFLINE -> PLAYER_RETRY_MS
+                    else -> PLAYER_POLLING_MS
+                }
+                withTimeoutOrNull(interval) { requests.receive() }
             }
         }
     }
 
+    fun setPlayerVisible(visible: Boolean) {
+        playerVisible = visible
+        if (visible) requests.trySend(Unit)
+    }
+
     fun refresh() {
         if (!GenreClassifierSettings.connectionEnabled.value) change(Status.DISABLED)
-        else change(Status.CHECKING)
+        else if (_status.value == Status.DISABLED) change(Status.CHECKING)
         requests.trySend(Unit)
     }
 

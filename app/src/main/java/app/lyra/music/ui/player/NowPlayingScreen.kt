@@ -36,7 +36,10 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -51,6 +54,7 @@ import app.lyra.music.playback.PlaybackUiState
 import app.lyra.music.ui.common.YouTubeLikeButton
 import app.lyra.music.ui.common.PersonalizationFeedbackMenu
 import kotlin.math.roundToLong
+import kotlinx.coroutines.awaitCancellation
 
 /** Schermata completa del brano corrente. */
 @Composable
@@ -75,6 +79,17 @@ fun NowPlayingScreen(
     var isSeeking by remember { mutableStateOf(false) }
     var seekFraction by remember { mutableFloatStateOf(0f) }
     val serverStatus by LyraServerMonitor.status.collectAsStateWithLifecycle()
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(lifecycle) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            LyraServerMonitor.setPlayerVisible(true)
+            try {
+                awaitCancellation()
+            } finally {
+                LyraServerMonitor.setPlayerVisible(false)
+            }
+        }
+    }
     val isAutomaticQueue = AutomaticPlaylistManager.isActive() &&
         AutomaticPlaylistManager.currentTitle() == queueState.title
     val durationMs = state.durationMs.coerceAtLeast(0L)

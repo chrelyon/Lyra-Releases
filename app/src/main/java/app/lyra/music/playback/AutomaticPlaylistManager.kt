@@ -50,6 +50,7 @@ object AutomaticPlaylistManager {
         var intentShiftCount: Int = 0,
         /** Verified-only sessions never fall through to the legacy YTM radio. */
         val strictGenre: String? = null,
+        var verifiedRetryAfterNanos: Long? = null,
     )
 
     val source=kotlinx.coroutines.flow.MutableStateFlow("Locale")
@@ -73,59 +74,16 @@ object AutomaticPlaylistManager {
                 knownSongs.map(Song::id) == songs.map(Song::id)
         } == true
 
-    suspend fun insertNewVerifiedSongs(
-        currentId: String,
-        expectedSongs: List<Song>,
-        queueStillMatches: () -> Boolean,
-    ): Boolean =
-        mutex.withLock {
-            val current = session ?: return@withLock false
-            val genre = current.strictGenre ?: return@withLock false
-            val expectedIds = expectedSongs.map(Song::id)
-            if (knownSongs.map(Song::id) != expectedIds || !queueStillMatches()) {
-                return@withLock false
-            }
-            val result = try {
-                VerifiedGenrePlaylistClient.fetchWithStatus(
-                    genre, current.seenIds, limit = 6, externalOnly = true,
-                )
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: Exception) {
-                Log.w("LYRA_AUTO_PLAYLIST", "discoveryRefreshFailed genre=$genre", error)
-                if (session === current && queueStillMatches()) {
-                    notice.value = "Impossibile contattare la discovery Lyra; la ricerca riproverà automaticamente."
-                }
-                return@withLock false
-            }
-            if (session !== current || !queueStillMatches() ||
-                knownSongs.map(Song::id) != expectedIds
-            ) return@withLock false
-            notice.value = result.notice
-            val index = knownSongs.indexOfFirst { it.id == currentId }
-            if (index < 0) return@withLock false
-            val eligible = result.songs.filterNot {
-                it.id in current.seenIds || ListeningProfileStore.isBlocked(it.id)
-            }.distinctBy(Song::id)
-            val fresh = RecommendationEngine.rank(
-                eligible,
-                RecommendationEngine.SessionContext(
-                    title = current.title, contextTag = current.contextTag,
-                    sessionSalt = current.sessionSalt,
-                ),
-            )
-            if (fresh.isEmpty()) return@withLock false
-            knownSongs = knownSongs.take(index + 1) + fresh + knownSongs.drop(index + 1)
-            current.seenIds.addAll(fresh.map(Song::id))
-            AutomaticPlaylistVarietyStore.remember(genre, emptyList(), fresh, recordOpening = false)
-            notice.value = "Aggiunte ${fresh.size} nuove proposte verificate."
-            true
-        }
     @Synchronized
     fun skippedArtistKeys(): Set<String> = session?.skippedArtists?.toSet().orEmpty()
 
     @Synchronized
     fun clear() {
+        session?.let {
+            val caller = Throwable().stackTrace.getOrNull(1)
+            Log.d("LYRA_AUTO_PLAYLIST", "automaticSessionCleared preset=${it.strictGenre} " +
+                "caller=${caller?.className}.${caller?.methodName}")
+        }
         activeMediaId=null
         generation.incrementAndGet()
         remote?.invalidate()
@@ -636,27 +594,8 @@ object AutomaticPlaylistManager {
         val current = session ?: return@withLock emptyList()
         if (current.consecutiveEarlySkips < 2 || hasArtistConstraint()) return@withLock emptyList()
 
-        if (current.strictGenre != null) {
-            val fresh = try {
-                VerifiedGenrePlaylistClient.fetch(
-                    current.strictGenre, current.seenIds + currentSongId, limit = 20,
-                ).filter { RecommendationEngine.artistKey(it.artist) !in current.skippedArtists }
-            } catch (e: CancellationException) { throw e }
-              catch (_: Exception) { return@withLock emptyList() }
-            val index = knownSongs.indexOfFirst { it.id == currentSongId }
-            if (index < 0 || session !== current) return@withLock emptyList()
-            val unique = fresh.filterNot { it.id in current.seenIds }
-            if (unique.isEmpty()) return@withLock emptyList()
-            current.seenIds.addAll(unique.map { it.id })
-            current.tailSeed = unique.last()
-            current.consecutiveEarlySkips = 0
-            current.intentShiftCount += 1
-            knownSongs = (knownSongs.take(index + 1) + unique).distinctBy { it.id }
-            AutomaticPlaylistVarietyStore.remember(
-                current.strictGenre, emptyList(), unique, recordOpening = false,
-            )
-            return@withLock unique
-        }
+        // Verified queues refill at the low-water mark, including after skips.
+        if (current.strictGenre != null) return@withLock emptyList()
 
         val currentIndex = knownSongs.indexOfFirst { it.id == currentSongId }
         if (currentIndex < 0) return@withLock emptyList()
@@ -729,23 +668,28 @@ object AutomaticPlaylistManager {
         val current = session ?: return@withLock emptyList()
 
         if (current.strictGenre != null) {
-            val next = try {
-                VerifiedGenrePlaylistClient.fetch(
+            val retryAfter = current.verifiedRetryAfterNanos
+            if (retryAfter != null && System.nanoTime() - retryAfter < 0) {
+                Log.d("LYRA_AUTO_PLAYLIST", "verifiedRefillDeferred genre=${current.strictGenre} reason=retry_cooldown")
+                return@withLock emptyList()
+            }
+            Log.d("LYRA_AUTO_PLAYLIST", "verifiedRefillRequest genre=${current.strictGenre} limit=20")
+            val result = try {
+                VerifiedGenrePlaylistClient.fetchWithStatus(
                     current.strictGenre, current.seenIds, limit = 20,
+                    requireMix = !VerifiedGenrePlaylistClient.isMood(current.strictGenre),
                 )
             } catch (e: CancellationException) { throw e }
               catch (error: Exception) {
-                source.value = "Server · generi non disponibili"
-                notice.value = "Impossibile caricare altri brani del genere richiesto. Riprova con Next."
-                Log.w(
-                    "LYRA_AUTO_PLAYLIST",
-                    "verifiedRefillFailed genre=${current.strictGenre} reason=${error.javaClass.simpleName} " +
-                        "message=${error.message}",
-                    error,
-                )
+                current.verifiedRetryAfterNanos = System.nanoTime() + 120_000_000_000L
+                if (session === current) {
+                    notice.value = "Server non disponibile. Continuo con la coda già disponibile."
+                }
+                Log.w("LYRA_AUTO_PLAYLIST", "verifiedRefillFailed genre=${current.strictGenre}", error)
                 return@withLock emptyList()
             }
             if (session !== current) return@withLock emptyList()
+            val next = result.songs
             val fresh = next.filterNot { it.id in current.seenIds }
             if (fresh.isNotEmpty()) {
                 current.seenIds.addAll(fresh.map { it.id })
@@ -755,9 +699,10 @@ object AutomaticPlaylistManager {
                     current.strictGenre, emptyList(), fresh, recordOpening = false,
                 )
             }
-            notice.value = if (fresh.isEmpty()) {
-                "Nessun altro brano ${current.strictGenre} verificato nel catalogo. Riprova più tardi."
+            current.verifiedRetryAfterNanos = if (fresh.isEmpty()) {
+                System.nanoTime() + (result.retryAfterSeconds ?: 120) * 1_000_000_000L
             } else null
+            notice.value = result.notice
             Log.d(
                 "LYRA_AUTO_PLAYLIST",
                 "verifiedRefill genre=${current.strictGenre} returned=${next.size} " +

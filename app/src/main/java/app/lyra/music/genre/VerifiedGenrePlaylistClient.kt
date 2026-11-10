@@ -17,7 +17,7 @@ import java.net.URL
  * request into a broad electronic playlist on network/provider errors.
  */
 object VerifiedGenrePlaylistClient {
-    data class Result(val songs: List<Song>, val notice: String?)
+    data class Result(val songs: List<Song>, val notice: String?, val retryAfterSeconds: Int? = null)
 
     private val genrePresets = setOf(
         "pop", "rock", "rap", "dance", "house", "techno", "edm",
@@ -46,6 +46,7 @@ object VerifiedGenrePlaylistClient {
         excludeIds: Collection<String> = emptyList(),
         limit: Int = 40,
         externalOnly: Boolean = false,
+        requireMix: Boolean = false,
     ): Result = withContext(Dispatchers.IO) {
         require(supported(preset)) { "Preset non supportato per la playlist verificata" }
         require(limit in 1..50) { "Limite brani non valido" }
@@ -61,6 +62,7 @@ object VerifiedGenrePlaylistClient {
             .put("limit", limit)
             .put("include_external", true)
             .put("external_only", externalOnly)
+            .put("require_mix", requireMix)
             .put("exclude_ids", JSONArray(excludeIds.filter(videoId::matches)
                 .distinct().takeLast(100)))
 
@@ -81,7 +83,14 @@ object VerifiedGenrePlaylistClient {
             when (val code = connection.responseCode) {
                 200 -> {
                     val body = connection.inputStream.bufferedReader().use {
-                        it.readText().take(90_001)
+                        val body = StringBuilder()
+                        val buffer = CharArray(4096)
+                        while (body.length <= 90_000) {
+                            val count = it.read(buffer, 0, minOf(buffer.size, 90_001 - body.length))
+                            if (count < 0) break
+                            body.append(buffer, 0, count)
+                        }
+                        body.toString()
                     }
                     if (body.length > 90_000) throw IllegalStateException("Risposta server eccessiva")
                     val parsed = parseVerifiedTracks(body, preset)
@@ -109,6 +118,13 @@ object VerifiedGenrePlaylistClient {
                             "externalDiscovery=${response.optBoolean("external_discovery", false)} " +
                             "evidence=$evidence",
                     )
+                    val status = response.optString("status")
+                    if (requireMix && status in setOf("mix_pending", "mix_shortfall")) {
+                        return@withContext Result(
+                            emptyList(), "Mix server in preparazione. Continuo con la coda disponibile.",
+                            response.optInt("retry_after_seconds", 120).coerceIn(30, 300),
+                        )
+                    }
                     if (!externalOnly && parsed.isEmpty()) {
                         throw IllegalStateException(
                             "Nessun brano $preset verificato: Lyra non inserisce generi casuali"
