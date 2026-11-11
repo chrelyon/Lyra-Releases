@@ -126,6 +126,41 @@ object CloudProfileSync {
 
     fun importRecoveryCode(code: String): Boolean {
         if (!::appContext.isInitialized || CloudProfileSyncSettings.backendEndpoint.isBlank()) return false
+        val telegramCode = code.trim().uppercase(java.util.Locale.ROOT)
+        if (Regex("LYRA-R-[A-F0-9]{24}").matches(telegramCode)) {
+            val recoveryOwner = app.lyra.music.genre.GenreClassifierSettings.token() ?: return false
+            scope.launch {
+                _status.value = _status.value.copy(restoring = true, error = null)
+                try {
+                    val identity = mutex.withLock {
+                        val prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                        val fingerprint = java.security.MessageDigest.getInstance("SHA-256")
+                            .digest(telegramCode.toByteArray()).joinToString("") { "%02x".format(it) }
+                        val secret = if (prefs.getString("recovery_challenge_hash", null) == fingerprint)
+                            prefs.getString("recovery_new_secret", null) else null
+                        val newSecret = secret ?: encode(randomBytes(32))
+                        check(prefs.edit().putString("recovery_challenge_hash", fingerprint)
+                            .putString("recovery_new_secret", newSecret).commit()) { "Impossibile preparare il ripristino" }
+                        val reply = requestJson("POST", "/v2/recovery/redeem", ensureIdentity(),
+                            JSONObject().put("code", telegramCode).put("newSecret", newSecret))
+                        check(recoveryOwner == app.lyra.music.genre.GenreClassifierSettings.token() &&
+                            app.lyra.music.genre.GenreClassifierSettings.isConfigured()) { "Token modificato durante il ripristino. Riprova." }
+                        val listener = reply.getString("listenerId")
+                        require(Regex("[A-Za-z0-9_-]{20,80}").matches(listener)) { "Risposta di recupero non valida" }
+                        Identity(listener, newSecret).also {
+                            // No local snapshot may overwrite the recovered server profile before import.
+                            CloudProfileSyncSettings.clearUbuntuReady()
+                            persistIdentity(it)
+                            prefs.edit().putBoolean(KEY_FRESH_IDENTITY, false).commit()
+                        }
+                    }
+                    restoreInternal(identity, adoptIdentity = true)
+                } catch (error: Exception) {
+                    _status.value = _status.value.copy(restoring = false, error = friendlyError(error))
+                }
+            }
+            return true
+        }
         val identity = parseRecoveryCode(code) ?: return false
         _status.value = Status(pendingEvents = ListeningEventStore.pendingForCloud().size)
         scope.launch { restoreInternal(identity, adoptIdentity = true) }
@@ -416,6 +451,14 @@ object CloudProfileSync {
                     app.lyra.music.genre.GenreClassifierSettings.recordAuthorization(it, false)
                 }
             }
+            if (path == "/v2/recovery/redeem" && code !in 200..299 && code != 426) {
+                throw IllegalStateException(when (code) {
+                    400, 422 -> "Codice non valido, scaduto o già utilizzato. Richiedi /ripristina al bot."
+                    429 -> "Troppi tentativi di ripristino. Attendi 10 minuti."
+                    401, 403 -> "Token Telegram non autorizzato al ripristino."
+                    else -> "Ripristino temporaneamente non disponibile. Riprova."
+                })
+            }
             if (code == 426) throw IllegalStateException("Aggiorna Lyra per collegarti al server.")
             if (path.startsWith("/v3/") && code !in 200..299) {
                 val reason=runCatching { JSONObject(response).optString("detail") }.getOrNull()
@@ -458,7 +501,9 @@ object CloudProfileSync {
                 else -> REQUEST_TIMEOUT_MS
             }
             setRequestProperty("Accept", "application/json")
-            setRequestProperty("Authorization", "Bearer ${identity.secret}")
+            val bearer = if (path == "/v2/recovery/redeem")
+                app.lyra.music.genre.GenreClassifierSettings.token() ?: error("Inserisci il tuo token Telegram") else identity.secret
+            setRequestProperty("Authorization", "Bearer $bearer")
             setRequestProperty("X-Lyra-Listener", identity.listenerId)
             if (root.trimEnd('/') == app.lyra.music.genre.GenreClassifierSettings.SERVER_URL.trimEnd('/')) {
                 app.lyra.music.genre.GenreClassifierSettings.token()
@@ -467,6 +512,7 @@ object CloudProfileSync {
             }
             setRequestProperty("X-Lyra-App-Version", BuildConfig.VERSION_NAME)
             setRequestProperty("X-Lyra-App-Version-Code", BuildConfig.VERSION_CODE.toString())
+            setRequestProperty("X-Lyra-Region", app.lyra.music.youtube.repository.DiscoverySettings.regionMode.value.name)
             setRequestProperty("X-Lyra-Installation", installationId())
             setRequestProperty("X-Lyra-Device-Model", (android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL).filter { it.code in 32..126 }.take(80))
             if (path.startsWith("/v3/")) setRequestProperty("X-Lyra-Capabilities", "server_queue_v1,boundary_commit_v1,offline_fallback_v1")

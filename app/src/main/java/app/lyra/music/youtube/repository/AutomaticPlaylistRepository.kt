@@ -29,6 +29,19 @@ class AutomaticPlaylistRepository {
         val international: Batch,
     )
 
+    suspend fun regionalSongs(): List<Song> {
+        val mode = DiscoverySettings.regionMode.value.name
+        val (preferred, outside) = app.lyra.music.personalization.RegionPreferencePolicy.queries(mode)
+        val first = findSeedFromQueries(listOf(preferred), "Area musicale preferita", emptySet(), emptySet())
+        val main = fromSeed(first).songs
+        val secondary = try {
+            val second = findSeedFromQueries(listOf(outside), "Esplorazione", emptySet(), emptySet())
+            fromSeed(second).songs.filterNot { other -> main.any { it.id == other.id } }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+          catch (_: Exception) { emptyList() }
+        return app.lyra.music.personalization.RegionPreferencePolicy.mix(main, secondary, 20)
+    }
+
     suspend fun artistSongs(artist: String): List<Song> {
         val result=withTimeoutOrNull(SEARCH_TIMEOUT_MS) {
             YouTube.search(query=artist,filter=YouTube.SearchFilter.FILTER_SONG).getOrThrow()

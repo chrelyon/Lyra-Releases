@@ -48,8 +48,10 @@ object AutomaticPlaylistManager {
         val skippedArtists: MutableSet<String> = mutableSetOf(),
         val positiveArtists: MutableSet<String> = mutableSetOf(),
         var intentShiftCount: Int = 0,
-        /** Verified-only sessions never fall through to the legacy YTM radio. */
-        val strictGenre: String? = null,
+        /** Verified results stay strict while the server is available. */
+        var strictGenre: String? = null,
+        var randomMode: Boolean = false,
+        val randomPool: List<Song> = emptyList(),
         var verifiedRetryAfterNanos: Long? = null,
     )
 
@@ -57,6 +59,8 @@ object AutomaticPlaylistManager {
     /** Visible feedback for automatic playlists, including a short verified catalog. */
     val notice=kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
     private val repository = AutomaticPlaylistRepository()
+    private var localLibrary: suspend () -> List<Song> = { emptyList() }
+    fun configureLocalLibrary(provider: suspend () -> List<Song>) { localLibrary = provider }
     private val mutex = Mutex()
 
     private val generation=java.util.concurrent.atomic.AtomicLong()
@@ -109,7 +113,15 @@ object AutomaticPlaylistManager {
 
     /** Restore binding only for the exact saved automatic queue. Manual queues never adopt it. */
     @Synchronized fun restoreServerBinding(title: String, songs: List<Song>) {
-        if (session != null || songs.isEmpty() || !PersonalizationSettings.useServerAlgorithm.value) return
+        if (session != null || songs.isEmpty()) return
+        if (title == "Play Casuale" || (!PersonalizationSettings.useServerAlgorithm.value && title.startsWith("Playlist Automatica · "))) {
+            remote = null
+            installServerSession(title, songs, null)
+            session!!.randomMode = true
+            source.value = "Locale · Play Casuale"
+            return
+        }
+        if (!PersonalizationSettings.useServerAlgorithm.value) return
         val saved = ServerPlaylistClient.savedIntent() ?: return
         if (saved.third != title) return
         remote=ServerPlaylistClient(saved.first,saved.second,title,restore=true)
@@ -148,7 +160,6 @@ object AutomaticPlaylistManager {
     }
 
     suspend fun startFromArtist(artist: String): StartResult {
-        check(app.lyra.music.genre.GenreClassifierSettings.isConfigured()) { "Token Telegram non verificato" }
         val name=artist.trim().take(120)
         require(name.isNotBlank())
         val title="Playlist Automatica · $name"
@@ -175,6 +186,61 @@ object AutomaticPlaylistManager {
             installServerSession(title,songs,null)
             return StartResult(title,songs)
         }
+    }
+
+    /** A local recommendation session; it never requires the Lyra server or a Google login. */
+    suspend fun startRandom(candidates: List<Song>): StartResult = mutex.withLock {
+        val expected = generation.get()
+        val pool = candidates.distinctBy { it.id }.filterNot { ListeningProfileStore.isBlocked(it.id) }
+        val salt = System.nanoTime()
+        val available = if (pool.isNotEmpty()) pool else {
+            repository.regionalSongs()
+        }
+        val ranked = RecommendationEngine.rank(available.shuffled(Random(salt)),
+            RecommendationEngine.SessionContext("Play Casuale", null, sessionSalt = salt))
+            .filterNot { ListeningProfileStore.isBlocked(it.id) }.distinctBy { it.id }
+        check(ranked.isNotEmpty()) { "Nessun brano disponibile" }
+        val queue = app.lyra.music.personalization.RegionPreferencePolicy.order(
+            ranked, app.lyra.music.youtube.repository.DiscoverySettings.regionMode.value.name).take(20)
+        if (generation.get() != expected) throw CancellationException("Playlist cambiata")
+        remote?.invalidate(); remote = null
+        session = Session("Play Casuale", null, salt, WatchEndpoint(videoId = queue.last().id), null,
+            queue.mapTo(mutableSetOf()) { it.id }, queue.last(), randomMode = true, randomPool = ranked)
+        knownSongs = queue
+        source.value = "Locale · Play Casuale"
+        notice.value = null
+        StartResult("Play Casuale", queue)
+    }
+
+    private suspend fun localContinuation(current: Session): List<Song> {
+        val expectedRemote = remote
+        val seed = knownSongs.lastOrNull { !it.isLocal } ?: current.tailSeed
+        val device = try { localLibrary() } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { emptyList() }
+        val remaining = (current.randomPool + device).distinctBy { it.id }.filterNot { it.id in current.seenIds || ListeningProfileStore.isBlocked(it.id) }
+        val proposed = if (remaining.isNotEmpty() || seed.isLocal) emptyList() else try {
+            repository.regionalSongs()
+        } catch (cancelled: CancellationException) { throw cancelled }
+          catch (_: Exception) { emptyList() }
+        val context = RecommendationEngine.SessionContext(current.title, current.contextTag,
+            recentSongs = knownSongs.takeLast(18), sessionSalt = current.sessionSalt + knownSongs.size,
+            avoidArtists = current.skippedArtists, positiveArtists = current.positiveArtists,
+            diversificationLevel = current.consecutiveEarlySkips)
+        val ranked = RecommendationEngine.rank((remaining + proposed).shuffled(), context)
+        val fresh = app.lyra.music.personalization.RegionPreferencePolicy.order(ranked,
+            app.lyra.music.youtube.repository.DiscoverySettings.regionMode.value.name)
+            .filterNot { it.id in current.seenIds || ListeningProfileStore.isBlocked(it.id) }
+            .distinctBy { it.id }.take(20)
+        // A manual queue or server handover wins over any late local response.
+        if (session !== current || remote !== expectedRemote || remote?.authoritative == true) return emptyList()
+        current.strictGenre = null
+        current.randomMode = true
+        current.continuation = null
+        current.seenIds.addAll(fresh.map { it.id })
+        fresh.lastOrNull()?.let { current.tailSeed = it }
+        knownSongs = knownSongs + fresh
+        source.value = "Locale · Play Casuale"
+        notice.value = "Continuazione con l’algoritmo locale; i nuovi brani non sono verificati dal server."
+        return fresh
     }
 
     suspend fun startFromSeed(
@@ -459,6 +525,13 @@ object AutomaticPlaylistManager {
         val tail = clean.lastOrNull()
             ?: throw IllegalArgumentException("Cronologia automatica senza brani")
 
+        if (title == "Play Casuale") {
+            remote?.invalidate(); remote = null
+            installServerSession(title, clean, null)
+            session!!.randomMode = true
+            source.value = "Locale · Play Casuale"
+            return@withLock StartResult(title, clean)
+        }
         val strict = AutomaticPlaylistCatalog.presets.firstOrNull {
             title == "Playlist Automatica · ${it.title}" &&
                 VerifiedGenrePlaylistClient.supported(it.id)
@@ -667,20 +740,28 @@ object AutomaticPlaylistManager {
     }
 
     suspend fun loadMore(): List<Song> = mutex.withLock {
-        if (!app.lyra.music.genre.GenreClassifierSettings.isConfigured()) return@withLock emptyList()
         val current = session ?: return@withLock emptyList()
+        if (current.randomMode) return@withLock localContinuation(current)
+        if (!GenreClassifierSettings.isConfigured() && current.strictGenre != null) {
+            return@withLock localContinuation(current)
+        }
+        if (!GenreClassifierSettings.isConfigured()) {
+            remote?.localFallback()
+            if (remote?.kind != "artist") return@withLock localContinuation(current)
+        }
 
-        if (current.strictGenre != null) {
+        val strictGenre = current.strictGenre
+        if (strictGenre != null) {
             val retryAfter = current.verifiedRetryAfterNanos
             if (retryAfter != null && System.nanoTime() - retryAfter < 0) {
-                Log.d("LYRA_AUTO_PLAYLIST", "verifiedRefillDeferred genre=${current.strictGenre} reason=retry_cooldown")
+                Log.d("LYRA_AUTO_PLAYLIST", "verifiedRefillDeferred genre=${strictGenre} reason=retry_cooldown")
                 return@withLock emptyList()
             }
-            Log.d("LYRA_AUTO_PLAYLIST", "verifiedRefillRequest genre=${current.strictGenre} limit=20")
+            Log.d("LYRA_AUTO_PLAYLIST", "verifiedRefillRequest genre=${strictGenre} limit=20")
             val result = try {
                 VerifiedGenrePlaylistClient.fetchWithStatus(
-                    current.strictGenre, current.seenIds, limit = 20,
-                    requireMix = !VerifiedGenrePlaylistClient.isMood(current.strictGenre),
+                    strictGenre, current.seenIds, limit = 20,
+                    requireMix = !VerifiedGenrePlaylistClient.isMood(strictGenre),
                 )
             } catch (e: CancellationException) { throw e }
               catch (error: Exception) {
@@ -688,8 +769,8 @@ object AutomaticPlaylistManager {
                 if (session === current) {
                     notice.value = "Server non disponibile. Continuo con la coda già disponibile."
                 }
-                Log.w("LYRA_AUTO_PLAYLIST", "verifiedRefillFailed genre=${current.strictGenre}", error)
-                return@withLock emptyList()
+                Log.w("LYRA_AUTO_PLAYLIST", "verifiedRefillFailed genre=${strictGenre}", error)
+                return@withLock localContinuation(current)
             }
             if (session !== current) return@withLock emptyList()
             val next = result.songs
@@ -699,7 +780,7 @@ object AutomaticPlaylistManager {
                 current.tailSeed = fresh.last()
                 knownSongs = knownSongs + fresh
                 AutomaticPlaylistVarietyStore.remember(
-                    current.strictGenre, emptyList(), fresh, recordOpening = false,
+                    strictGenre, emptyList(), fresh, recordOpening = false,
                 )
             }
             current.verifiedRetryAfterNanos = if (fresh.isEmpty()) {
@@ -708,7 +789,7 @@ object AutomaticPlaylistManager {
             notice.value = result.notice
             Log.d(
                 "LYRA_AUTO_PLAYLIST",
-                "verifiedRefill genre=${current.strictGenre} returned=${next.size} " +
+                "verifiedRefill genre=${strictGenre} returned=${next.size} " +
                     "added=${fresh.size} total=${knownSongs.size}",
             )
             return@withLock fresh
@@ -730,7 +811,10 @@ object AutomaticPlaylistManager {
                 if (client.kind !in setOf("artist","context")) { source.value="Catalogo da verificare";return@withLock emptyList() }
                 client.localFallback()
             }
-            catch (_: Exception) { client.localFallback();source.value="Locale · server non disponibile" }
+            catch (_: Exception) {
+                client.localFallback();source.value="Locale · server non disponibile"
+                if (client.kind != "artist") return@withLock localContinuation(current)
+            }
         }
         if (client?.kind == "artist") {
             val fresh=repository.artistSongs(client.value).filterNot { it.id in current.seenIds }

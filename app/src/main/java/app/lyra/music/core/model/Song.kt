@@ -17,6 +17,8 @@ data class Song(
     val playbackUri: String? = null,
     val album: String? = null,
     val albumId: Long? = null,
+    val origin: String? = null,
+    val countryCode: String? = null,
 ) {
     val isLocal: Boolean
         get() = !playbackUri.isNullOrBlank()

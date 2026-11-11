@@ -75,9 +75,13 @@ object GenreClassifierClient {
             GenreClassifierSettings.recordAuthorization(token, false)
             ConnectionCheck.Failed(
                 when (error) {
-                    is UnauthorizedException -> "Token non autorizzato o revocato."
-                    is UpdateRequiredException -> "Aggiorna Lyra per collegarti al server."
-                    else -> "Connessione non riuscita: ${error.javaClass.simpleName}"
+                    is UnauthorizedException -> "Token non valido o revocato."
+                    is UpdateRequiredException -> "Aggiornare Lyra: versione non ammessa dal server."
+                    is java.net.SocketTimeoutException -> "Server non raggiungibile: tempo di attesa scaduto."
+                    is java.net.UnknownHostException -> "Indirizzo del server non raggiungibile. Verifica Internet."
+                    is javax.net.ssl.SSLException -> "Connessione sicura al server non riuscita."
+                    is java.io.IOException -> "Server non raggiungibile. Verifica la connessione."
+                    else -> "Connessione non riuscita. Riprova."
                 }
             )
         }
@@ -153,6 +157,7 @@ object GenreClassifierClient {
             connection.useCaches = false
             connection.setRequestProperty("X-Lyra-App-Version", BuildConfig.VERSION_NAME)
             connection.setRequestProperty("X-Lyra-App-Version-Code", BuildConfig.VERSION_CODE.toString())
+            connection.setRequestProperty("X-Lyra-Region", app.lyra.music.youtube.repository.DiscoverySettings.regionMode.value.name)
             connection.instanceFollowRedirects = false
             if (body != null) {
                 connection.requestMethod = "POST"

@@ -24,7 +24,7 @@ object GenreClassifierSettings {
     private lateinit var context: Context
     private val _enabled = MutableStateFlow(false)
     private val _endpoint = MutableStateFlow(SERVER_URL)
-    private val _connectionEnabled = MutableStateFlow(true)
+    private val _connectionEnabled = MutableStateFlow(false)
     private val _hasToken = MutableStateFlow(false)
     private val _authorized = MutableStateFlow(false)
 
@@ -39,7 +39,7 @@ object GenreClassifierSettings {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         // Never trust a previously user-entered or legacy Funnel address.
         _endpoint.value = SERVER_URL
-        _connectionEnabled.value = prefs.getBoolean(KEY_CONNECTION_ENABLED, true)
+        _connectionEnabled.value = prefs.getBoolean(KEY_CONNECTION_ENABLED, false)
         _hasToken.value = readToken() != null
         // Authorization is verified again after each process restart.
         _enabled.value = false
@@ -94,6 +94,18 @@ object GenreClassifierSettings {
             if (enabled) app.lyra.music.diagnostics.DiagnosticsReporter.scheduleUpload(context)
         }
         return enabled
+    }
+
+    fun clearToken(): Boolean {
+        if (!::context.isInitialized) return false
+        if (!context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+                .remove(KEY_ENCRYPTED_TOKEN).commit()) return false
+        _hasToken.value = false
+        _authorized.value = false
+        _enabled.value = false
+        app.lyra.music.cloud.CloudProfileSyncSettings.onServerConnectionChanged()
+        LyraServerMonitor.refresh()
+        return true
     }
 
     fun token(): String? = if (::context.isInitialized) readToken() else null

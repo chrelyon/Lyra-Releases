@@ -458,25 +458,62 @@ class PlaybackViewModel(
         }
     }
 
+    private suspend fun localRandomPool(): List<Song> {
+        val device = app.lyra.music.local.LocalMediaRepository(getApplication<Application>()).getSongs()
+        val history = if (PersonalizationSettings.useHistory.value) ListeningProfileStore.topSongs(200) else emptyList()
+        val likes = if (PersonalizationSettings.useLikes.value) ListeningProfileStore.recentLiked(100) else emptyList()
+        return (device + history + likes).distinctBy { it.id }
+    }
+
+    fun startRandomPlaylist() {
+        if (_automaticPlaylistLoading.value) return
+        val generation = ++automaticGeneration
+        AutomaticPlaylistManager.clear()
+        _automaticPlaylistLoading.value = true
+        _automaticPlaylistError.value = null
+        viewModelScope.launch {
+            try {
+                val result = AutomaticPlaylistManager.startRandom(localRandomPool())
+                if (generation == automaticGeneration) {
+                    playQueue(result.songs, 0, result.title, preserveAutomaticSession = true, forceSequential = true)
+                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (_: Exception) {
+                if (generation == automaticGeneration) _automaticPlaylistError.value =
+                    "Nessun brano disponibile. Aggiungi musica sul dispositivo oppure verifica Internet per cercare nuovi brani."
+            } finally {
+                if (generation == automaticGeneration) _automaticPlaylistLoading.value = false
+            }
+        }
+    }
+
     /** Avvia "Mix per me" (home, Scopri e Android Auto usano lo stesso motore). */
     fun startPersonalizedMix() {
         if (!app.lyra.music.genre.GenreClassifierSettings.isConfigured()) {
-            _automaticPlaylistError.value = "Verifica il token Telegram nelle Impostazioni."
+            startRandomPlaylist()
             return
         }
         val generation = ++automaticGeneration
         _automaticPlaylistLoading.value = true
         _automaticPlaylistError.value = null
         viewModelScope.launch {
+            AutomaticPlaylistManager.clear()
             runCatching { PersonalizedMixEngine.build() }
+                .recoverCatching { error ->
+                    if (error is kotlinx.coroutines.CancellationException) throw error
+                    if (generation != automaticGeneration) throw kotlinx.coroutines.CancellationException("Playlist cambiata")
+                    val local = AutomaticPlaylistManager.startRandom(localRandomPool())
+                    PersonalizedMixEngine.Result(local.title, local.songs,
+                        "Server non disponibile: playlist preparata con l’algoritmo locale.")
+                }
                 .onSuccess { result ->
                     if (generation == automaticGeneration) {
-                        AutomaticPlaylistManager.clear()
                         playQueue(
                             songs = result.songs,
                             startIndex = 0,
                             queueTitle = result.title,
                             preserveAutomaticSession = true,
+                            forceSequential = AutomaticPlaylistManager.isActive(),
                             allowSmartContinuation = false,
                         )
                         _automaticPlaylistError.value = result.warning

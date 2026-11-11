@@ -81,6 +81,7 @@ object VerifiedGenrePlaylistClient {
             connection.setRequestProperty("Authorization", "Bearer $token")
             connection.setRequestProperty("X-Lyra-App-Version", BuildConfig.VERSION_NAME)
             connection.setRequestProperty("X-Lyra-App-Version-Code", BuildConfig.VERSION_CODE.toString())
+            connection.setRequestProperty("X-Lyra-Region", app.lyra.music.youtube.repository.DiscoverySettings.regionMode.value.name)
             connection.outputStream.use {
                 it.write(payload.toString().toByteArray(Charsets.UTF_8))
             }
@@ -184,6 +185,7 @@ object VerifiedGenrePlaylistClient {
             connection.setRequestProperty("Authorization", "Bearer $token")
             connection.setRequestProperty("X-Lyra-App-Version", BuildConfig.VERSION_NAME)
             connection.setRequestProperty("X-Lyra-App-Version-Code", BuildConfig.VERSION_CODE.toString())
+            connection.setRequestProperty("X-Lyra-Region", app.lyra.music.youtube.repository.DiscoverySettings.regionMode.value.name)
             val payload = JSONObject().put("category", category).put("limit", 40)
                 .put("include_external", true)
             connection.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
@@ -218,6 +220,7 @@ object VerifiedGenrePlaylistClient {
                     artist = artist,
                     durationSeconds = 0L,
                     thumbnailUrl = approvedArtworkUrl(row.optString("thumbnailUrl")),
+                    origin = row.optString("origin").takeIf { it.isNotBlank() }, countryCode = row.optString("countryCode").takeIf { it.isNotBlank() },
                 )
             }.distinctBy { it.id }
             check(songs.isNotEmpty()) { "Nessun brano verificato disponibile per $category" }
@@ -271,6 +274,7 @@ object VerifiedGenrePlaylistClient {
                 artist = artist,
                 durationSeconds = 0L,
                 thumbnailUrl = artwork,
+                origin = item.optString("origin").takeIf { it.isNotBlank() }, countryCode = item.optString("countryCode").takeIf { it.isNotBlank() },
             ))
         }
         return out

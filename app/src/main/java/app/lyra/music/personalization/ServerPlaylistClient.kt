@@ -81,7 +81,7 @@ class ServerPlaylistClient(val kind: String, val value: String, val title: Strin
         val cache=state!!.optJSONObject("metadata") ?: JSONObject()
         cache.keys().forEach { id ->
             val m=cache.getJSONObject(id)
-            known[id]=Song(id,m.getString("title"),m.getString("artist"),0,"https://i.ytimg.com/vi/$id/hqdefault.jpg")
+            known[id]=Song(id,m.getString("title"),m.getString("artist"),0,"https://i.ytimg.com/vi/$id/hqdefault.jpg", origin=m.optString("origin").takeIf { it.isNotBlank() },countryCode=m.optString("countryCode").takeIf { it.isNotBlank() })
         }
         val missing=ordered.filterNot { it in known }
         if (missing.isNotEmpty()) {
@@ -89,7 +89,7 @@ class ServerPlaylistClient(val kind: String, val value: String, val title: Strin
             for (i in 0 until metadata.length()) {
                 val m=metadata.getJSONObject(i);val id=m.getString("id")
                 if (id in missing) {
-                    known[id]=Song(id,m.getString("title"),m.getString("artist"),0,"https://i.ytimg.com/vi/$id/hqdefault.jpg")
+                    known[id]=Song(id,m.getString("title"),m.getString("artist"),0,"https://i.ytimg.com/vi/$id/hqdefault.jpg", origin=m.optString("origin").takeIf { it.isNotBlank() },countryCode=m.optString("countryCode").takeIf { it.isNotBlank() })
                     cache.put(id,m)
                 }
             }

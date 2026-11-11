@@ -21,6 +21,8 @@ object LyraServerMonitor {
     @Volatile private var playerVisible = false
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val requests = Channel<Unit>(Channel.CONFLATED)
+    private val _failureReason = MutableStateFlow<String?>(null)
+    val failureReason: StateFlow<String?> = _failureReason.asStateFlow()
     private val _status = MutableStateFlow(Status.CHECKING)
     val status: StateFlow<Status> = _status.asStateFlow()
     private var started = false
@@ -50,6 +52,7 @@ object LyraServerMonitor {
                     if (checked is GenreClassifierClient.ConnectionCheck.Failed) {
                         token?.let { GenreClassifierSettings.recordAuthorization(it, false) }
                     }
+                    _failureReason.value = (checked as? GenreClassifierClient.ConnectionCheck.Failed)?.reason
                     change(when {
                         !GenreClassifierSettings.connectionEnabled.value || !GenreClassifierSettings.hasToken.value -> Status.DISABLED
                         checked is GenreClassifierClient.ConnectionCheck.Ready -> Status.ONLINE
@@ -72,13 +75,20 @@ object LyraServerMonitor {
     }
 
     fun refresh() {
+        _failureReason.value = null
         lastAuthorizationAttempt = 0L
         if (!GenreClassifierSettings.connectionEnabled.value || !GenreClassifierSettings.hasToken.value) change(Status.DISABLED)
         else if (_status.value == Status.DISABLED) change(Status.CHECKING)
         requests.trySend(Unit)
     }
 
+    fun recordCheck(check: GenreClassifierClient.ConnectionCheck) {
+        _failureReason.value = (check as? GenreClassifierClient.ConnectionCheck.Failed)?.reason
+        change(if (check is GenreClassifierClient.ConnectionCheck.Ready) Status.ONLINE else Status.OFFLINE)
+    }
+
     private fun change(next: Status) {
+        if (next == Status.DISABLED || next == Status.ONLINE) _failureReason.value = null
         if (_status.value != next) {
             _status.value = next
             Log.d("LYRA_SERVER", "availability=$next")

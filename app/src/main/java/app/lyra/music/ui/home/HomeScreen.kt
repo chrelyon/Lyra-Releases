@@ -80,6 +80,7 @@ fun HomeScreen(
     onDismissUpdateBanner: () -> Unit,
     onOpenUpdateSettings: () -> Unit,
     onOpenDiscover: () -> Unit,
+    onPlayRandom: () -> Unit,
     onOpenSearch: () -> Unit,
     onOpenLocalLibrary: () -> Unit,
     onOpenRecentHistory: () -> Unit,
@@ -211,10 +212,10 @@ fun HomeScreen(
                 .padding(top = 16.dp),
         ) {
             HomeFeatureCard(
-                title = "Scopri",
+                title = if (serverAuthorized) "Scopri" else "Play Casuale",
                 icon = { Icon(Icons.Rounded.Explore, contentDescription = null) },
-                onClick = onOpenDiscover,
-                enabled = serverAuthorized,
+                onClick = if (serverAuthorized) onOpenDiscover else onPlayRandom,
+                enabled = serverAuthorized || !dailyMixLoading,
                 modifier = Modifier.weight(1f),
             )
             HomeFeatureCard(

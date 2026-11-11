@@ -8,8 +8,16 @@ object DiagnosticsSettings {
     private const val KEY_ENABLED_SINCE = "logging_enabled_since"
     private const val KEY_LAST_EXIT_TIMESTAMP = "last_exit_timestamp"
 
+    fun initialize(context: Context) {
+        val preferences = prefs(context)
+        if (!preferences.contains(KEY_LOGGING_ENABLED)) {
+            preferences.edit().putBoolean(KEY_LOGGING_ENABLED, true)
+                .putLong(KEY_ENABLED_SINCE, System.currentTimeMillis()).commit()
+        }
+    }
+
     fun isLoggingEnabled(context: Context): Boolean =
-        prefs(context).getBoolean(KEY_LOGGING_ENABLED, false)
+        prefs(context).getBoolean(KEY_LOGGING_ENABLED, true)
 
     fun loggingEnabledSince(context: Context): Long =
         prefs(context).getLong(KEY_ENABLED_SINCE, 0L)

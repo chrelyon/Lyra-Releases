@@ -43,6 +43,8 @@ import org.json.JSONObject
  */
 object YouTubeAuthorizationManager {
 
+    private const val SESSION_PREFS = "lyra_google_session"
+    private const val KEY_SIGNED_OUT = "explicitly_signed_out"
     private const val TAG = "LYRA_AUTH"
     const val YOUTUBE_FORCE_SSL_SCOPE =
         "https://www.googleapis.com/auth/youtube.force-ssl"
@@ -82,6 +84,10 @@ object YouTubeAuthorizationManager {
      */
     fun refreshSilently() {
         val context = appContext ?: return
+        if (context.getSharedPreferences(SESSION_PREFS, Context.MODE_PRIVATE).getBoolean(KEY_SIGNED_OUT, false)) {
+            if (_state.value.isChecking) clearLocalAuthorizationState()
+            return
+        }
         if (silentRefreshInFlight || _state.value.isAuthorizing) {
             Log.d(TAG, "silentCheck skipped reason=busy")
             return
@@ -201,6 +207,8 @@ object YouTubeAuthorizationManager {
         resultCode: Int,
         data: Intent?,
     ) {
+        // Ignore a Google sheet that completes after an explicit logout.
+        if (!_state.value.isAuthorizing) return
         if (resultCode != Activity.RESULT_OK || data == null) {
             pendingAccountSelection = false
             _state.value = _state.value.copy(
@@ -263,7 +271,12 @@ object YouTubeAuthorizationManager {
     fun disconnect(onComplete: (Boolean) -> Unit = {}) {
         val serial = ++authorizationSerial
         pendingAccountSelection = false
+        val accountToRevoke = authorizedAccount
         val context = appContext
+        context?.getSharedPreferences(SESSION_PREFS, Context.MODE_PRIVATE)?.edit()
+            ?.putBoolean(KEY_SIGNED_OUT, true)?.commit()
+        // Log out locally immediately, even offline or if Google revocation fails.
+        clearLocalAuthorizationState()
         if (context == null) {
             clearLocalAuthorizationState(
                 errorMessage = "Disconnessione Google non disponibile."
@@ -272,15 +285,9 @@ object YouTubeAuthorizationManager {
             return
         }
 
-        _state.value = _state.value.copy(
-            isChecking = true,
-            isAuthorizing = false,
-            errorMessage = null,
-        )
-
         val builder = RevokeAccessRequest.builder()
             .setScopes(requestedScopes)
-        authorizedAccount?.let(builder::setAccount)
+        accountToRevoke?.let(builder::setAccount)
 
         Identity.getAuthorizationClient(context)
             .revokeAccess(builder.build())
@@ -365,6 +372,8 @@ object YouTubeAuthorizationManager {
             return
         }
 
+        appContext?.getSharedPreferences(SESSION_PREFS, Context.MODE_PRIVATE)?.edit()
+            ?.putBoolean(KEY_SIGNED_OUT, false)?.commit()
         val previousState = _state.value
         val previousAccount = authorizedAccount
         val nextAccount = runCatching {

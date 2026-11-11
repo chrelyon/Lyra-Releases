@@ -30,6 +30,7 @@ class LyraApplication : Application() {
     override fun onCreate() {
         super.onCreate()
 
+        DiagnosticsSettings.initialize(this)
         LyraLog.initialize(this)
         AudioSettings.initialize(this)
         LocalLoudnessStore.initialize(this)
@@ -37,6 +38,9 @@ class LyraApplication : Application() {
             LocalAudioScanWorker.schedule(this)
         }
         PlaybackResumeSettings.initialize(this)
+        app.lyra.music.playback.AutomaticPlaylistManager.configureLocalLibrary {
+            app.lyra.music.local.LocalMediaRepository(this).getSongs()
+        }
         PersonalizationSettings.initialize(this)
         GenreClassifierSettings.initialize(this)
         LyraServerMonitor.start()

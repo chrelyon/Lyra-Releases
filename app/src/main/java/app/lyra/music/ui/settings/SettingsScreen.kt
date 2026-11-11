@@ -42,6 +42,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -49,6 +50,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -80,6 +82,8 @@ import kotlinx.coroutines.launch
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit,
+    incomingToken: String? = null,
+    onIncomingTokenHandled: () -> Unit = {},
     onOpenListeningAnalytics: () -> Unit,
     onSwitchGoogleAccount: () -> Unit = {},
     availableUpdate: GitHubUpdateChecker.UpdateInfo? = null,
@@ -115,7 +119,6 @@ fun SettingsScreen(
     val restoreLastSession by PlaybackResumeSettings.restoreLastSession.collectAsStateWithLifecycle()
     val discoveryRegion by DiscoverySettings.regionMode.collectAsStateWithLifecycle()
     val personalizationEnabled by PersonalizationSettings.enabled.collectAsStateWithLifecycle()
-    val serverAlgorithmEnabled by PersonalizationSettings.useServerAlgorithm.collectAsStateWithLifecycle()
     val discoveryLevel by PersonalizationSettings.discoveryLevel.collectAsStateWithLifecycle()
     val useHistory by PersonalizationSettings.useHistory.collectAsStateWithLifecycle()
     val useLikes by PersonalizationSettings.useLikes.collectAsStateWithLifecycle()
@@ -127,10 +130,24 @@ fun SettingsScreen(
     val serverConnectionEnabled by GenreClassifierSettings.connectionEnabled.collectAsStateWithLifecycle()
     val serverStatus by LyraServerMonitor.status.collectAsStateWithLifecycle()
     val genreTokenSaved by GenreClassifierSettings.hasToken.collectAsStateWithLifecycle()
+    val serverFailureReason by LyraServerMonitor.failureReason.collectAsStateWithLifecycle()
+    var showDeleteTokenConfirmation by remember { mutableStateOf(false) }
     var showDisableServerConfirmation by remember { mutableStateOf(false) }
     var genreTokenInput by remember { mutableStateOf("") }
     var genreConnectionMessage by remember { mutableStateOf<String?>(null) }
     var genreChecking by remember { mutableStateOf(false) }
+    var importedTokenDraft by remember { mutableStateOf(false) }
+    val tokenFocusRequester = remember { FocusRequester() }
+    LaunchedEffect(incomingToken) {
+        if (incomingToken != null) {
+            genreTokenInput = incomingToken
+            importedTokenDraft = true
+            genreConnectionMessage = "Token ricevuto da Telegram. Premi Salva token per confermare e verificare l’accesso."
+            withFrameNanos { }
+            runCatching { tokenFocusRequester.requestFocus() }
+            onIncomingTokenHandled()
+        }
+    }
     val cloudSyncEnabled by CloudProfileSyncSettings.enabled.collectAsStateWithLifecycle()
     val ubuntuSyncUrl by CloudProfileSyncSettings.ubuntuUrl.collectAsStateWithLifecycle()
     val ubuntuReady by CloudProfileSyncSettings.ready.collectAsStateWithLifecycle()
@@ -350,20 +367,6 @@ fun SettingsScreen(
                     )
                 }
 
-                SettingToggleRow(
-                    title = "Algoritmo playlist del server",
-                    subtitle = if (serverAlgorithmEnabled) {
-                        "Attivo: il server propone e verifica i brani delle nuove playlist automatiche. " +
-                            "Se non è raggiungibile, Lyra segnala l'uso del motore locale."
-                    } else {
-                        "Disattivo: le playlist automatiche vengono costruite dallo smartphone. " +
-                            "Cronologia, preferiti e apprendimento locale rimangono disponibili."
-                    },
-                    checked = serverAlgorithmEnabled && serverAuthorized,
-                    enabled = serverAuthorized,
-                    onCheckedChange = PersonalizationSettings::setUseServerAlgorithm,
-                )
-
                 if (personalizationEnabled) {
                     Text(
                         text = "Livello di scoperta",
@@ -468,30 +471,45 @@ fun SettingsScreen(
                 Text(
                     when {
                         !serverConnectionEnabled -> "Connessione disattivata."
+                        importedTokenDraft -> "Token ricevuto da Telegram. Premi Salva token."
+                        genreConnectionMessage != null -> "Accesso non disponibile. " + genreConnectionMessage
                         serverAuthorized -> "Accesso autorizzato."
-                        !genreTokenSaved -> "Inserisci il token ricevuto da Telegram."
+                        !genreTokenSaved -> "Accesso non disponibile. Inserisci token."
+                        genreChecking -> "Verifica connessione in corso…"
                         serverStatus == LyraServerMonitor.Status.ONLINE -> "Verifica del token in corso…"
                         serverStatus == LyraServerMonitor.Status.CHECKING -> "Verifica connessione in corso…"
-                        else -> "Accesso non disponibile. Controlla il token o riprova."
+                        else -> "Accesso non disponibile. " +
+                            (genreConnectionMessage ?: serverFailureReason ?: "Server non raggiungibile. Riprova.")
                     },
                     style = MaterialTheme.typography.bodySmall,
-                    color = if (serverStatus == LyraServerMonitor.Status.ONLINE && serverConnectionEnabled)
+                    color = if (serverAuthorized && serverConnectionEnabled && genreConnectionMessage == null)
                         MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
                     modifier = Modifier.padding(top = 8.dp),
                 )
                 OutlinedButton(
-                    enabled = serverConnectionEnabled && genreTokenSaved,
-                    onClick = { LyraServerMonitor.refresh() },
+                    enabled = serverConnectionEnabled && genreTokenSaved && !genreChecking,
+                    onClick = {
+                        genreChecking = true
+                        genreConnectionMessage = null
+                        scope.launch {
+                            try {
+                                val check = GenreClassifierClient.checkConnection()
+                                LyraServerMonitor.recordCheck(check)
+                                if (check is GenreClassifierClient.ConnectionCheck.Ready) CloudProfileSyncSettings.refreshFromClassifier()
+                            } finally { genreChecking = false }
+                        }
+                    },
                     modifier = Modifier.padding(top = 8.dp),
                 ) { Text("Controlla connessione") }
                 OutlinedTextField(
                     value = genreTokenInput,
                     onValueChange = { genreTokenInput = it; genreConnectionMessage = null },
-                    label = { Text(if (genreTokenSaved) "Sostituisci token Telegram" else "Incolla il token ricevuto da Telegram") },
+                    placeholder = { Text(if (genreTokenSaved) "Token Salvato" else "Inserisci token",
+                        color = if (genreTokenSaved) Color(0xFF55B977) else MaterialTheme.colorScheme.error) },
                     visualTransformation = PasswordVisualTransformation(),
                     singleLine = true,
-                    enabled = serverConnectionEnabled && !genreChecking,
-                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                    enabled = (serverConnectionEnabled || importedTokenDraft) && !genreChecking,
+                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp).focusRequester(tokenFocusRequester),
                 )
                 Text("Richiedi l’accesso al bot Telegram. Dopo l’approvazione, incolla qui il token ricevuto.",
                     style = MaterialTheme.typography.bodySmall,
@@ -500,53 +518,43 @@ fun SettingsScreen(
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) {
                     OutlinedButton(
-                        enabled = serverConnectionEnabled && !genreChecking,
+                        enabled = (serverConnectionEnabled || importedTokenDraft) && !genreChecking,
                         onClick = {
                             if (GenreClassifierSettings.saveToken(genreTokenInput)) {
+                                if (importedTokenDraft) GenreClassifierSettings.setConnectionEnabled(true)
+                                importedTokenDraft = false
                                 genreTokenInput = ""
-                                genreConnectionMessage = "Verifica del token in corso…"
-                                genreChecking = true
-                                scope.launch {
-                                    try {
-                                        genreConnectionMessage = when (val check = GenreClassifierClient.checkConnection()) {
-                                            GenreClassifierClient.ConnectionCheck.Ready -> {
-                                                CloudProfileSyncSettings.refreshFromClassifier()
-                                                "Token verificato. Collegamento al profilo musicale in corso."
-                                            }
-                                            is GenreClassifierClient.ConnectionCheck.Failed -> check.reason
-                                        }
-                                    } finally {
-                                        genreChecking = false
-                                        LyraServerMonitor.refresh()
-                                    }
-                                }
+                                genreConnectionMessage = null
+                                LyraServerMonitor.refresh()
                             } else {
                                 genreConnectionMessage = "Incolla il token ricevuto dal bot Telegram."
                             }
                         },
                     ) { Text("Salva token") }
                     OutlinedButton(
-                        enabled = serverConnectionEnabled && genreTokenSaved && !genreChecking,
-                        onClick = {
-                            scope.launch {
-                                genreChecking = true
-                                val check = GenreClassifierClient.checkConnection()
-                                genreChecking = false
-                                genreConnectionMessage = when (check) {
-                                    GenreClassifierClient.ConnectionCheck.Ready -> "Connessione e autorizzazione verificate"
-                                    is GenreClassifierClient.ConnectionCheck.Failed -> check.reason
-                                }
-                            }
-                        },
-                    ) { Text(if (genreChecking) "Controllo..." else "Verifica token") }
-                }
-                genreConnectionMessage?.let { message ->
-                    Text(message, style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(top = 10.dp))
+                        enabled = genreTokenSaved && !genreChecking,
+                        onClick = { showDeleteTokenConfirmation = true },
+                    ) { Text("Elimina token") }
                 }
 
             }
+        }
+
+        if (showDeleteTokenConfirmation) {
+            AlertDialog(
+                onDismissRequest = { showDeleteTokenConfirmation = false },
+                title = { Text("Eliminare il token salvato?") },
+                text = { Text("Il token verrà rimosso da questo dispositivo. Profilo, cronologia e dati sul server saranno conservati. Potrai inserire nuovamente un token autorizzato.") },
+                confirmButton = { TextButton(onClick = {
+                    showDeleteTokenConfirmation = false
+                    if (GenreClassifierSettings.clearToken()) {
+                        genreTokenInput = ""
+                        importedTokenDraft = false
+                        genreConnectionMessage = null
+                    } else genreConnectionMessage = "Impossibile eliminare il token. Riprova."
+                }) { Text("Elimina token") } },
+                dismissButton = { TextButton(onClick = { showDeleteTokenConfirmation = false }) { Text("Annulla") } },
+            )
         }
 
         if (showDisableServerConfirmation) {
@@ -712,23 +720,18 @@ fun SettingsScreen(
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold,
                         )
-                        Text(
-                            text = "Influenza le playlist proposte in Scopri senza modificare la tua libreria personale.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(top = 4.dp),
-                        )
+
                     }
                 }
 
                 DiscoverySettings.RegionMode.entries.forEach { mode ->
-                    val (title, subtitle) = when (mode) {
+                    val title = when (mode) {
                         DiscoverySettings.RegionMode.ITALY ->
-                            "Italia" to "Dà priorità a playlist e scene italiane."
+                            "Italia"
                         DiscoverySettings.RegionMode.ITALY_EUROPE ->
-                            "Italia + Europa" to "Selezione italiana ed europea, consigliata."
+                            "Italia + Europa"
                         DiscoverySettings.RegionMode.INTERNATIONAL ->
-                            "Internazionale" to "Allarga Scopri al catalogo musicale globale."
+                            "Internazionale"
                     }
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -738,7 +741,6 @@ fun SettingsScreen(
                     ) {
                         RadioButton(
                             selected = discoveryRegion == mode,
-                            enabled = serverAuthorized,
                             onClick = { DiscoverySettings.setRegionMode(mode) },
                         )
                         Spacer(Modifier.width(8.dp))
@@ -748,11 +750,7 @@ fun SettingsScreen(
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.Medium,
                             )
-                            Text(
-                                text = subtitle,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+
                         }
                     }
                 }
@@ -1312,7 +1310,7 @@ fun SettingsScreen(
             title = { Text("Codice di recupero Lyra") },
             text = {
                 Column {
-                    Text("Conservalo in un luogo sicuro. Identifica in modo anonimo il tuo profilo musicale e permette di ripristinarlo dopo cancellazione dati o reinstallazione. Non contiene dati del tuo account Google.")
+                    Text("Per il recupero tramite Telegram invia /ripristina al bot dal tuo account. Riceverai un codice monouso, valido 10 minuti. Il codice LYRA2 esistente resta compatibile.")
                     Text(
                         text = recoveryCode,
                         style = MaterialTheme.typography.bodySmall,
@@ -1338,7 +1336,7 @@ fun SettingsScreen(
             title = { Text("Ripristina backup Lyra") },
             text = {
                 Column {
-                    Text("Inserisci il codice LYRA2 del backup. Verrà ripristinato soltanto il profilo musicale usato dall’algoritmo; account Google e libreria vengono recuperati separatamente dopo il login.")
+                    Text("Invia /ripristina al bot Telegram dal tuo account e inserisci qui il codice ricevuto. Verrà recuperato il backup musicale del proprietario del token. Account Google e libreria richiedono un nuovo accesso verificato.")
                     OutlinedTextField(
                         value = recoveryCodeInput,
                         onValueChange = { recoveryCodeInput = it },

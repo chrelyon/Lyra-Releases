@@ -12,15 +12,15 @@ object DiscoverySettings {
     private const val KEY_REGION_MODE = "region_mode"
     private lateinit var appContext: Context
 
-    private val _regionMode = MutableStateFlow(RegionMode.ITALY_EUROPE)
+    private val _regionMode = MutableStateFlow(RegionMode.INTERNATIONAL)
     val regionMode: StateFlow<RegionMode> = _regionMode.asStateFlow()
 
     fun initialize(context: Context) {
         appContext = context.applicationContext
         val raw = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .getString(KEY_REGION_MODE, RegionMode.ITALY_EUROPE.name)
+            .getString(KEY_REGION_MODE, RegionMode.INTERNATIONAL.name)
         _regionMode.value = runCatching { RegionMode.valueOf(raw.orEmpty()) }
-            .getOrDefault(RegionMode.ITALY_EUROPE)
+            .getOrDefault(RegionMode.INTERNATIONAL)
     }
 
     fun setRegionMode(mode: RegionMode) {

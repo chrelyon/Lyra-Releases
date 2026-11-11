@@ -1,5 +1,7 @@
 package app.lyra.music
 
+import android.content.Intent
+import app.lyra.music.access.TokenActivationLink
 import android.app.PendingIntent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -48,6 +50,21 @@ import app.lyra.music.youtube.auth.YouTubeAuthorizationManager
 import app.lyra.music.youtube.cache.YouTubeLibraryCache
 
 class MainActivity : ComponentActivity() {
+    private val activationToken = mutableStateOf<String?>(null)
+
+    private fun consumeActivationIntent(source: Intent?) {
+        if (source?.action != Intent.ACTION_VIEW) return
+        activationToken.value = TokenActivationLink.parse(source.dataString)
+        // Do not retain the bearer in the Activity intent or log its URI.
+        source.data = null
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        consumeActivationIntent(intent)
+    }
+
 
     private val homeViewModel: HomeViewModel by lazy {
         ViewModelProvider(this)[HomeViewModel::class.java]
@@ -70,6 +87,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        consumeActivationIntent(intent)
         enableEdgeToEdge()
         LyraLog.d("LYRA_APP", "MainActivity onCreate")
 
@@ -102,6 +120,12 @@ class MainActivity : ComponentActivity() {
                     }
                     var updateBannerDismissed by rememberSaveable { mutableStateOf(false) }
                     var focusUpdateSettings by rememberSaveable { mutableStateOf(false) }
+                    LaunchedEffect(activationToken.value) {
+                        if (activationToken.value != null) {
+                            focusUpdateSettings = false
+                            navController.navigate(SETTINGS_ROUTE) { launchSingleTop = true }
+                        }
+                    }
 
                     LaunchedEffect(updateCheckTrigger) {
                         when (val result = GitHubUpdateChecker.checkAutomatically(this@MainActivity)) {
@@ -202,6 +226,7 @@ class MainActivity : ComponentActivity() {
                                     onOpenRecentHistory = {
                                         navController.navigate(HISTORY_ROUTE) { launchSingleTop = true }
                                     },
+                                    onPlayRandom = playbackViewModel::startRandomPlaylist,
                                     onStartDailyMix = playbackViewModel::startPersonalizedMix,
                                     dailyMixLoading = automaticPlaylistLoading,
                                     dailyMixError = automaticPlaylistError,
@@ -291,6 +316,8 @@ class MainActivity : ComponentActivity() {
 
                             composable(SETTINGS_ROUTE) {
                                 SettingsScreen(
+                                    incomingToken = activationToken.value,
+                                    onIncomingTokenHandled = { activationToken.value = null },
                                     onBack = { navController.popBackStack() },
                                     onSwitchGoogleAccount = { requestYouTubeAuthorization(forceAccountSelection = true) },
                                     onOpenListeningAnalytics = {
