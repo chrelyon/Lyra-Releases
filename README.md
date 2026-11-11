@@ -30,4 +30,4 @@ Il progetto è in evoluzione; alcune funzioni possono richiedere una
 connessione Internet o autorizzazioni specifiche del dispositivo.
 
 ## Token Server
-Tramite Telegram Bot @LyraMusicAccessBot
+Free tramite Telegram Bot @LyraMusicAccessBot
