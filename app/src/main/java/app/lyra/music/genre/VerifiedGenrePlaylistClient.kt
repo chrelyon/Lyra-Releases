@@ -1,5 +1,6 @@
 package app.lyra.music.genre
 
+import app.lyra.music.BuildConfig
 import app.lyra.music.core.model.Song
 import app.lyra.music.diagnostics.LyraLog as Log
 import kotlinx.coroutines.Dispatchers
@@ -50,6 +51,7 @@ object VerifiedGenrePlaylistClient {
     ): Result = withContext(Dispatchers.IO) {
         require(supported(preset)) { "Preset non supportato per la playlist verificata" }
         require(limit in 1..50) { "Limite brani non valido" }
+        check(GenreClassifierSettings.isConfigured()) { "Verifica il token Telegram nelle Impostazioni" }
         val token = GenreClassifierSettings.token()
             ?: throw IllegalStateException("Token Lyra non configurato")
         val base = GenreClassifierSettings.SERVER_URL
@@ -77,6 +79,8 @@ object VerifiedGenrePlaylistClient {
             connection.doOutput = true
             connection.setRequestProperty("Content-Type", "application/json")
             connection.setRequestProperty("Authorization", "Bearer $token")
+            connection.setRequestProperty("X-Lyra-App-Version", BuildConfig.VERSION_NAME)
+            connection.setRequestProperty("X-Lyra-App-Version-Code", BuildConfig.VERSION_CODE.toString())
             connection.outputStream.use {
                 it.write(payload.toString().toByteArray(Charsets.UTF_8))
             }
@@ -132,7 +136,10 @@ object VerifiedGenrePlaylistClient {
                     }
                     Result(parsed, notice)
                 }
-                401, 403 -> throw IllegalStateException("Token Lyra non autorizzato")
+                401, 403, 426 -> {
+                    GenreClassifierSettings.recordAuthorization(token, false)
+                    throw IllegalStateException(if (code == 426) "Aggiorna Lyra per collegarti al server." else "Token Lyra non autorizzato")
+                }
                 404 -> throw IllegalStateException("Aggiorna il server Lyra: API playlist verificata assente")
                 else -> throw IllegalStateException("Playlist Lyra non disponibile (HTTP $code)")
             }
@@ -160,6 +167,7 @@ object VerifiedGenrePlaylistClient {
 
     suspend fun fetchCurated(category: String): List<Song> = withContext(Dispatchers.IO) {
         require(category in setOf("novita", "italiane", "80s", "90s", "2000s", "2010s", "2020s"))
+        check(GenreClassifierSettings.isConfigured()) { "Verifica il token Telegram nelle Impostazioni" }
         val token = GenreClassifierSettings.token()
             ?: throw IllegalStateException("Token Lyra non configurato")
         val base = GenreClassifierSettings.SERVER_URL
@@ -174,11 +182,16 @@ object VerifiedGenrePlaylistClient {
             connection.doOutput = true
             connection.setRequestProperty("Content-Type", "application/json")
             connection.setRequestProperty("Authorization", "Bearer $token")
+            connection.setRequestProperty("X-Lyra-App-Version", BuildConfig.VERSION_NAME)
+            connection.setRequestProperty("X-Lyra-App-Version-Code", BuildConfig.VERSION_CODE.toString())
             val payload = JSONObject().put("category", category).put("limit", 40)
                 .put("include_external", true)
             connection.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
             val code = connection.responseCode
-            check(code == 200) { "Playlist Lyra non disponibile (HTTP $code)" }
+            if (code == 401 || code == 403 || code == 426) {
+                GenreClassifierSettings.recordAuthorization(token, false)
+            }
+            check(code == 200) { if (code == 426) "Aggiorna Lyra per collegarti al server." else "Playlist Lyra non disponibile" }
             val text = connection.inputStream.bufferedReader().use { reader ->
                 val buffer = CharArray(90_001)
                 var count = 0

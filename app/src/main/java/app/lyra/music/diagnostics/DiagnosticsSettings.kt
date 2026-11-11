@@ -33,6 +33,7 @@ object DiagnosticsSettings {
                 .remove(KEY_ENABLED_SINCE)
                 .apply()
             LyraLog.clearStoredLogs(appContext)
+            DiagnosticsUploadWorker.cancel(appContext)
         }
     }
 

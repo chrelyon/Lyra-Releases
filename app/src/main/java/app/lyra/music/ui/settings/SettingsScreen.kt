@@ -51,6 +51,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -122,7 +123,7 @@ fun SettingsScreen(
     val avoidRepeats by PersonalizationSettings.avoidRepeats.collectAsStateWithLifecycle()
     val continueSimilar by PersonalizationSettings.continueSimilar.collectAsStateWithLifecycle()
     val autoSkipFailedTracks by PersonalizationSettings.autoSkipFailedTracks.collectAsStateWithLifecycle()
-    val genreEnabled by GenreClassifierSettings.enabled.collectAsStateWithLifecycle()
+    val serverAuthorized by GenreClassifierSettings.authorized.collectAsStateWithLifecycle()
     val serverConnectionEnabled by GenreClassifierSettings.connectionEnabled.collectAsStateWithLifecycle()
     val serverStatus by LyraServerMonitor.status.collectAsStateWithLifecycle()
     val genreTokenSaved by GenreClassifierSettings.hasToken.collectAsStateWithLifecycle()
@@ -134,6 +135,7 @@ fun SettingsScreen(
     val ubuntuSyncUrl by CloudProfileSyncSettings.ubuntuUrl.collectAsStateWithLifecycle()
     val ubuntuReady by CloudProfileSyncSettings.ready.collectAsStateWithLifecycle()
     val cloudStatus by CloudProfileSync.status.collectAsStateWithLifecycle()
+    val googleVerified = authorizationState.isAuthorized && !authorizationState.isChecking && !authorizationState.isAuthorizing
 
     var loggingEnabled by remember {
         mutableStateOf(DiagnosticsSettings.isLoggingEnabled(context))
@@ -212,19 +214,9 @@ fun SettingsScreen(
                 Spacer(Modifier.width(14.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Abilita log diagnostici",
+                        text = "Log diagnostici e invio automatico degli errori",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
-                    )
-                    Text(
-                        text = if (loggingEnabled) {
-                            "Attivi. In caso di crash Lyra proporrà l'invio del report a ${DiagnosticsReporter.SUPPORT_EMAIL}."
-                        } else {
-                            "Disattivati. Nessun log diagnostico viene salvato sul dispositivo."
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 4.dp),
                     )
                 }
                 Switch(
@@ -232,17 +224,12 @@ fun SettingsScreen(
                     onCheckedChange = { enabled ->
                         DiagnosticsSettings.setLoggingEnabled(context, enabled)
                         loggingEnabled = enabled
+                        if (enabled) DiagnosticsReporter.scheduleUpload(context)
                     },
                 )
             }
         }
 
-        Text(
-            text = "I log restano nella memoria privata dell'app. Token Google e URL audio firmati vengono esclusi o oscurati. Disattivando l'opzione i log locali vengono cancellati.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(top = 10.dp, start = 4.dp, end = 4.dp),
-        )
 
         Surface(
             shape = MaterialTheme.shapes.large,
@@ -372,7 +359,8 @@ fun SettingsScreen(
                         "Disattivo: le playlist automatiche vengono costruite dallo smartphone. " +
                             "Cronologia, preferiti e apprendimento locale rimangono disponibili."
                     },
-                    checked = serverAlgorithmEnabled,
+                    checked = serverAlgorithmEnabled && serverAuthorized,
+                    enabled = serverAuthorized,
                     onCheckedChange = PersonalizationSettings::setUseServerAlgorithm,
                 )
 
@@ -451,7 +439,7 @@ fun SettingsScreen(
 
         // Fixed Funnel server; private token is never stored in the APK.
         Spacer(Modifier.height(14.dp))
-        SettingsSectionTitle("Server Lyra e verifica dei generi")
+        SettingsSectionTitle("Connessione al Server Lyra")
         Surface(
             shape = MaterialTheme.shapes.large,
             tonalElevation = 2.dp,
@@ -465,7 +453,7 @@ fun SettingsScreen(
                     Column(modifier = Modifier.weight(1f)) {
                         Text("Connessione al server Lyra", style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold)
-                        Text("Collegamento automatico e verifica ogni 5 minuti. I backup Ubuntu e il controllo dei generi vengono sospesi se disattivi la connessione.",
+                        Text("Token Telegram richiesto per Scopri, backup e statistiche musicali.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
@@ -478,17 +466,13 @@ fun SettingsScreen(
                     )
                 }
                 Text(
-                    "Server: ${GenreClassifierSettings.SERVER_URL}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 10.dp),
-                )
-                Text(
                     when {
-                        !serverConnectionEnabled -> "Server disattivato: playlist senza verifica dei generi e backup remoto sospeso."
-                        serverStatus == LyraServerMonitor.Status.ONLINE -> "Server raggiungibile."
+                        !serverConnectionEnabled -> "Connessione disattivata."
+                        serverAuthorized -> "Accesso autorizzato."
+                        !genreTokenSaved -> "Inserisci il token ricevuto da Telegram."
+                        serverStatus == LyraServerMonitor.Status.ONLINE -> "Verifica del token in corso…"
                         serverStatus == LyraServerMonitor.Status.CHECKING -> "Verifica connessione in corso…"
-                        else -> "Server non raggiungibile: le playlist potrebbero essere meno precise. La riproduzione continua."
+                        else -> "Accesso non disponibile. Controlla il token o riprova."
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = if (serverStatus == LyraServerMonitor.Status.ONLINE && serverConnectionEnabled)
@@ -496,66 +480,48 @@ fun SettingsScreen(
                     modifier = Modifier.padding(top = 8.dp),
                 )
                 OutlinedButton(
-                    enabled = serverConnectionEnabled,
+                    enabled = serverConnectionEnabled && genreTokenSaved,
                     onClick = { LyraServerMonitor.refresh() },
                     modifier = Modifier.padding(top = 8.dp),
                 ) { Text("Controlla connessione") }
-                Spacer(Modifier.height(14.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Filtro intelligente dei generi", style = MaterialTheme.typography.titleMedium)
-                        Text("Esclude soltanto brani già classificati incompatibili. Mai bloccare l’ascolto.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Switch(
-                        checked = genreEnabled && serverConnectionEnabled,
-                        enabled = serverConnectionEnabled && !genreChecking &&
-                            (genreEnabled || GenreClassifierSettings.isConfigured()),
-                        onCheckedChange = { active ->
-                            if (!active) {
-                                GenreClassifierSettings.setEnabled(false)
-                                genreConnectionMessage = "Filtro musicale disattivato"
-                            } else {
-                                scope.launch {
-                                    genreChecking = true
-                                    val check = GenreClassifierClient.checkConnection()
-                                    genreChecking = false
-                                    if (check is GenreClassifierClient.ConnectionCheck.Ready) {
-                                        GenreClassifierSettings.setEnabled(true)
-                                        genreConnectionMessage = "Filtro attivo: House, Techno, Dance e Rock"
-                                    } else {
-                                        genreConnectionMessage = (check as GenreClassifierClient.ConnectionCheck.Failed).reason
-                                    }
-                                }
-                            }
-                        },
-                    )
-                }
                 OutlinedTextField(
                     value = genreTokenInput,
                     onValueChange = { genreTokenInput = it; genreConnectionMessage = null },
-                    label = { Text(if (genreTokenSaved) "Nuovo token API (opzionale)" else "Token API del classificatore") },
+                    label = { Text(if (genreTokenSaved) "Sostituisci token Telegram" else "Incolla il token ricevuto da Telegram") },
                     visualTransformation = PasswordVisualTransformation(),
                     singleLine = true,
-                    enabled = serverConnectionEnabled,
+                    enabled = serverConnectionEnabled && !genreChecking,
                     modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
                 )
-                Text("Il token non è incorporato nell'APK: viene cifrato con Android Keystore.",
+                Text("Richiedi l’accesso al bot Telegram. Dopo l’approvazione, incolla qui il token ricevuto.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 6.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) {
                     OutlinedButton(
-                        enabled = serverConnectionEnabled,
+                        enabled = serverConnectionEnabled && !genreChecking,
                         onClick = {
                             if (GenreClassifierSettings.saveToken(genreTokenInput)) {
                                 genreTokenInput = ""
-                                genreConnectionMessage = "Token salvato. Puoi attivare il filtro musicale."
-                                LyraServerMonitor.refresh()
+                                genreConnectionMessage = "Verifica del token in corso…"
+                                genreChecking = true
+                                scope.launch {
+                                    try {
+                                        genreConnectionMessage = when (val check = GenreClassifierClient.checkConnection()) {
+                                            GenreClassifierClient.ConnectionCheck.Ready -> {
+                                                CloudProfileSyncSettings.refreshFromClassifier()
+                                                "Token verificato. Collegamento al profilo musicale in corso."
+                                            }
+                                            is GenreClassifierClient.ConnectionCheck.Failed -> check.reason
+                                        }
+                                    } finally {
+                                        genreChecking = false
+                                        LyraServerMonitor.refresh()
+                                    }
+                                }
                             } else {
-                                genreConnectionMessage = "Token mancante o non valido (almeno 40 caratteri)."
+                                genreConnectionMessage = "Incolla il token ricevuto dal bot Telegram."
                             }
                         },
                     ) { Text("Salva token") }
@@ -579,10 +545,7 @@ fun SettingsScreen(
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.padding(top = 10.dp))
                 }
-                Text("Il server controlla i brani già presenti nella cache. Un brano senza classificazione viene comunque riprodotto.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 12.dp))
+
             }
         }
 
@@ -590,7 +553,7 @@ fun SettingsScreen(
             AlertDialog(
                 onDismissRequest = { showDisableServerConfirmation = false },
                 title = { Text("Disattivare il server Lyra?") },
-                text = { Text("Le playlist potrebbero essere meno precise: non verranno verificati i generi musicali. Anche i backup su Ubuntu saranno sospesi finché non riattiverai il collegamento. La musica continuerà normalmente.") },
+                text = { Text("Scopri, backup e statistiche musicali saranno sospesi finché non riattiverai il collegamento. La riproduzione locale rimane disponibile.") },
                 confirmButton = {
                     TextButton(onClick = {
                         showDisableServerConfirmation = false
@@ -618,7 +581,7 @@ fun SettingsScreen(
                     Spacer(Modifier.width(14.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Backup musicale Ubuntu",
+                            text = "Backup musicale Lyra",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold,
                         )
@@ -626,7 +589,7 @@ fun SettingsScreen(
                             text = if (CloudProfileSyncSettings.endpointConfigured) {
                                 "Salva solo il profilo musicale Lyra: brani, artisti, ascolti, skip, Like/Dislike e segnali usati dall’algoritmo. Nessun nome, e-mail, UID Google, password, cookie o token OAuth viene salvato."
                             } else {
-                                "Il server Ubuntu è preconfigurato nell’applicazione."
+                                "Il collegamento a Lyra è configurato automaticamente."
                             },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -634,24 +597,24 @@ fun SettingsScreen(
                         )
                     }
                     Switch(
-                        checked = cloudSyncEnabled,
-                        enabled = CloudProfileSyncSettings.endpointConfigured,
+                        checked = cloudSyncEnabled && serverAuthorized,
+                        enabled = serverAuthorized && CloudProfileSyncSettings.endpointConfigured,
                         onCheckedChange = CloudProfileSyncSettings::setEnabled,
                     )
                 }
 
                 Text(
                     when {
-                        ubuntuSyncUrl.isBlank() -> "Server Ubuntu preconfigurato. La vecchia sincronizzazione non viene usata."
-                        ubuntuReady -> "Profilo e backup su Ubuntu tramite Funnel. La vecchia sincronizzazione non viene usata."
-                        else -> "Primo ripristino da Ubuntu in attesa. Il server deve contenere il profilo importato. Nessun invio ad altri server."
+                        ubuntuSyncUrl.isBlank() -> "Collegamento a Lyra in preparazione."
+                        ubuntuReady -> "Profilo musicale collegato a Lyra."
+                        else -> "Inserisci un token valido per collegare il profilo musicale."
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(top = 10.dp),
                 )
 
-                if (cloudSyncEnabled) {
+                if (cloudSyncEnabled && serverAuthorized) {
                     Text(
                         text = when {
                             cloudStatus.restoring -> "Ripristino del profilo musicale in corso…"
@@ -694,8 +657,8 @@ fun SettingsScreen(
                     ) { Text("Ripristina da codice") }
                     TextButton(
                         onClick = { showDeleteCloudConfirmation = true },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) { Text("Elimina backup su Ubuntu") }
+                        modifier = Modifier.fillMaxWidth().alpha(if (serverAuthorized) 1f else 0.45f),
+                    ) { Text("Elimina backup musicale") }
                 }
             }
         }
@@ -705,7 +668,7 @@ fun SettingsScreen(
         Surface(
             shape = MaterialTheme.shapes.large,
             tonalElevation = 2.dp,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().alpha(if (serverAuthorized) 1f else 0.45f),
         ) {
             Column(modifier = Modifier.padding(18.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -722,6 +685,7 @@ fun SettingsScreen(
                 }
                 OutlinedButton(
                     onClick = onOpenListeningAnalytics,
+                    enabled = serverAuthorized,
                     modifier = Modifier.fillMaxWidth().padding(top = 14.dp),
                 ) { Text("Apri statistiche musicali") }
             }
@@ -774,6 +738,7 @@ fun SettingsScreen(
                     ) {
                         RadioButton(
                             selected = discoveryRegion == mode,
+                            enabled = serverAuthorized,
                             onClick = { DiscoverySettings.setRegionMode(mode) },
                         )
                         Spacer(Modifier.width(8.dp))
@@ -1100,7 +1065,7 @@ fun SettingsScreen(
                     Spacer(Modifier.width(14.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = if (authorizationState.isAuthorized) {
+                            text = if (googleVerified) {
                                 authorizationState.profileName ?: "Account Google collegato"
                             } else {
                                 "Nessun account collegato"
@@ -1109,7 +1074,7 @@ fun SettingsScreen(
                             fontWeight = FontWeight.SemiBold,
                         )
                         Text(
-                            text = if (authorizationState.isAuthorized) {
+                            text = if (googleVerified) {
                                 "Accesso YouTube attivo per libreria e brani piaciuti."
                             } else {
                                 "Puoi accedere nuovamente dalla Home."
@@ -1121,7 +1086,7 @@ fun SettingsScreen(
                     }
                 }
 
-                if (authorizationState.isAuthorized) {
+                if (googleVerified) {
                     OutlinedButton(
                         onClick = onSwitchGoogleAccount,
                         enabled = !authorizationState.isChecking && !authorizationState.isAuthorizing,
@@ -1401,7 +1366,7 @@ fun SettingsScreen(
         AlertDialog(
             onDismissRequest = { showDeleteCloudConfirmation = false },
             title = { Text("Eliminare il backup remoto attivo?") },
-            text = { Text("Verranno eliminati da Ubuntu il profilo musicale e gli eventi associati all’identificatore Lyra corrente. I dati locali restano sul telefono.") },
+            text = { Text("Verranno eliminati da Lyra il profilo musicale e gli eventi associati all’identificatore Lyra corrente. I dati locali restano sul telefono.") },
             confirmButton = {
                 TextButton(onClick = {
                     CloudProfileSyncSettings.setEnabled(false)
@@ -1450,6 +1415,7 @@ private fun SettingToggleRow(
     subtitle: String,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
+    enabled: Boolean = true,
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -1468,7 +1434,7 @@ private fun SettingToggleRow(
                 modifier = Modifier.padding(top = 2.dp),
             )
         }
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
+        Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
     }
 }
 

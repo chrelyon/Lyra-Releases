@@ -1,6 +1,7 @@
 package app.lyra.music.genre
 
 import android.os.SystemClock
+import app.lyra.music.BuildConfig
 import app.lyra.music.core.model.Song
 import app.lyra.music.diagnostics.LyraLog as Log
 import kotlinx.coroutines.Dispatchers
@@ -53,22 +54,29 @@ object GenreClassifierClient {
     suspend fun checkConnection(): ConnectionCheck = withContext(Dispatchers.IO) {
         val endpoint = GenreClassifierSettings.endpoint.value
         val token = GenreClassifierSettings.token()
-        if (!GenreDecisionPolicy.validEndpoint(endpoint) || token == null) {
+        if (!GenreClassifierSettings.connectionEnabled.value || !GenreDecisionPolicy.validEndpoint(endpoint) || token == null) {
             return@withContext ConnectionCheck.Failed("Indirizzo o token non configurati")
         }
         try {
             val status = request(endpoint, "/health", null, null)
             if (status.optString("status") != "ok") {
-                return@withContext ConnectionCheck.Failed("Modello non ancora pronto")
+                GenreClassifierSettings.recordAuthorization(token, false)
+                return@withContext ConnectionCheck.Failed("Servizio non ancora pronto")
             }
             val test = request(endpoint, "/v1/lookup", token,
                 JSONObject().put("media_id", "lyra-connectivity-probe").put("preset", "house"))
-            if (!test.has("found")) ConnectionCheck.Failed("Risposta lookup inattesa")
-            else ConnectionCheck.Ready
+            if (!test.has("found")) {
+                GenreClassifierSettings.recordAuthorization(token, false)
+                ConnectionCheck.Failed("Verifica dell’accesso non disponibile")
+            } else if (GenreClassifierSettings.recordAuthorization(token, true)) {
+                ConnectionCheck.Ready
+            } else ConnectionCheck.Failed("Token modificato durante la verifica")
         } catch (error: Exception) {
+            GenreClassifierSettings.recordAuthorization(token, false)
             ConnectionCheck.Failed(
                 when (error) {
-                    is UnauthorizedException -> "Token non autorizzato (HTTP 401)"
+                    is UnauthorizedException -> "Token non autorizzato o revocato."
+                    is UpdateRequiredException -> "Aggiorna Lyra per collegarti al server."
                     else -> "Connessione non riuscita: ${error.javaClass.simpleName}"
                 }
             )
@@ -134,6 +142,7 @@ object GenreClassifierClient {
     }
 
     private class UnauthorizedException : Exception()
+    private class UpdateRequiredException : Exception()
 
     private fun request(endpoint: String, path: String, bearer: String?, body: JSONObject?): JSONObject {
         val url = URL(endpoint + path)
@@ -142,6 +151,8 @@ object GenreClassifierClient {
             connection.connectTimeout = CONNECT_TIMEOUT_MS
             connection.readTimeout = READ_TIMEOUT_MS
             connection.useCaches = false
+            connection.setRequestProperty("X-Lyra-App-Version", BuildConfig.VERSION_NAME)
+            connection.setRequestProperty("X-Lyra-App-Version-Code", BuildConfig.VERSION_CODE.toString())
             connection.instanceFollowRedirects = false
             if (body != null) {
                 connection.requestMethod = "POST"
@@ -153,7 +164,11 @@ object GenreClassifierClient {
             if (bearer != null) connection.setRequestProperty("Authorization", "Bearer $bearer")
             if (body != null) connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
             val status = connection.responseCode
-            if (status == 401 || status == 403) throw UnauthorizedException()
+            if (status == 401 || status == 403 || status == 426) {
+                bearer?.let { GenreClassifierSettings.recordAuthorization(it, false) }
+                if (status == 426) throw UpdateRequiredException()
+                throw UnauthorizedException()
+            }
             if (status !in 200..299) throw IllegalStateException("HTTP $status")
             val result = connection.inputStream.bufferedReader().use { it.readText().take(16_384) }
             return JSONObject(result)

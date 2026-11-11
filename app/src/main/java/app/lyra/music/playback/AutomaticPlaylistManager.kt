@@ -148,6 +148,7 @@ object AutomaticPlaylistManager {
     }
 
     suspend fun startFromArtist(artist: String): StartResult {
+        check(app.lyra.music.genre.GenreClassifierSettings.isConfigured()) { "Token Telegram non verificato" }
         val name=artist.trim().take(120)
         require(name.isNotBlank())
         val title="Playlist Automatica · $name"
@@ -233,6 +234,7 @@ object AutomaticPlaylistManager {
     }
 
     suspend fun startFromPreset(presetId: String): StartResult {
+        check(app.lyra.music.genre.GenreClassifierSettings.isConfigured()) { "Token Telegram non verificato" }
         val expectedGeneration=generation.get()
         val preset = AutomaticPlaylistCatalog.preset(presetId)
             ?: throw IllegalArgumentException("Preset automatico sconosciuto: $presetId")
@@ -665,6 +667,7 @@ object AutomaticPlaylistManager {
     }
 
     suspend fun loadMore(): List<Song> = mutex.withLock {
+        if (!app.lyra.music.genre.GenreClassifierSettings.isConfigured()) return@withLock emptyList()
         val current = session ?: return@withLock emptyList()
 
         if (current.strictGenre != null) {

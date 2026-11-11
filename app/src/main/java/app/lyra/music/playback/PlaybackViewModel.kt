@@ -256,6 +256,10 @@ class PlaybackViewModel(
 
     /** Avvia direttamente una selezione Lyra, senza schermate di playlist. */
     fun startDiscoveryMix(folderId: String, groupId: String) {
+        if (!app.lyra.music.genre.GenreClassifierSettings.isConfigured()) {
+            _automaticPlaylistError.value = "Verifica il token Telegram nelle Impostazioni."
+            return
+        }
         if (_automaticPlaylistLoading.value) return
         val generation = ++automaticGeneration
         _automaticPlaylistLoading.value = true
@@ -280,6 +284,10 @@ class PlaybackViewModel(
 
     /** Avvia con un solo tap un mood/genere di Scopri -> Playlist Automatica. */
     fun startAutomaticPlaylist(presetId: String) {
+        if (!app.lyra.music.genre.GenreClassifierSettings.isConfigured()) {
+            _automaticPlaylistError.value = "Verifica il token Telegram nelle Impostazioni."
+            return
+        }
         if (_automaticPlaylistLoading.value) return
         val generation = ++automaticGeneration
         AutomaticPlaylistManager.clear()
@@ -318,6 +326,10 @@ class PlaybackViewModel(
     }
 
     fun startAutomaticArtist(artist: String) {
+        if (!app.lyra.music.genre.GenreClassifierSettings.isConfigured()) {
+            _automaticPlaylistError.value = "Verifica il token Telegram nelle Impostazioni."
+            return
+        }
         if (_automaticPlaylistLoading.value || artist.isBlank()) return
         val generation=++automaticGeneration
         AutomaticPlaylistManager.clear()
@@ -334,6 +346,10 @@ class PlaybackViewModel(
 
     /** The selected album is a finite, ordered queue; never reinterpret it as a genre or artist radio. */
     fun startAutomaticAlbum(browseId: String, title: String) {
+        if (!app.lyra.music.genre.GenreClassifierSettings.isConfigured()) {
+            _automaticPlaylistError.value = "Verifica il token Telegram nelle Impostazioni."
+            return
+        }
         if (_automaticPlaylistLoading.value || browseId.isBlank()) return
         val generation = ++automaticGeneration
         AutomaticPlaylistManager.clear()
@@ -444,6 +460,10 @@ class PlaybackViewModel(
 
     /** Avvia "Mix per me" (home, Scopri e Android Auto usano lo stesso motore). */
     fun startPersonalizedMix() {
+        if (!app.lyra.music.genre.GenreClassifierSettings.isConfigured()) {
+            _automaticPlaylistError.value = "Verifica il token Telegram nelle Impostazioni."
+            return
+        }
         val generation = ++automaticGeneration
         _automaticPlaylistLoading.value = true
         _automaticPlaylistError.value = null

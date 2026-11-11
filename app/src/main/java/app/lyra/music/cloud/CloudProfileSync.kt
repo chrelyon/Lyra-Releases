@@ -114,7 +114,7 @@ object CloudProfileSync {
     }
 
     internal suspend fun performBackgroundBackup(): Boolean {
-        if (!::appContext.isInitialized) return true
+        if (!::appContext.isInitialized || !CloudProfileSyncSettings.enabled.value) return true
         return bootstrapIfNeeded() && syncInternal()
     }
 
@@ -150,7 +150,7 @@ object CloudProfileSync {
             val health = requestJson("GET", "/v2/health", identity, null, endpoint)
             check(health.optBoolean("ok") && health.optInt("schemaVersion") == 2 &&
                   health.optString("storage") == "ubuntu-sqlite") {
-                "Il server configurato non e un backend Lyra Ubuntu valido"
+                "Il server configurato non e un servizio Lyra valido"
             }
             // Capture pre-migration events before network I/O, so new listens are not lost.
             val previousPendingIds = ListeningEventStore.pendingForCloud().mapTo(mutableSetOf()) { it.id }
@@ -169,13 +169,13 @@ object CloudProfileSync {
                 requestJson("GET", "/v2/restore", identity, null, endpoint)
             }
             val profile = restored.optJSONObject("profile")
-                ?: throw IllegalStateException("Profilo non presente nel database Ubuntu")
+                ?: throw IllegalStateException("Profilo non presente nel profilo musicale")
             ListeningProfileStore.restoreCloudSnapshotJson(profile)
             ListeningEventStore.restoreCloudEventsJson(restored.optJSONArray("events"))
             // No re-upload of the pre-import backlog; preserve new listening events.
             if (!freshIdentity) ListeningEventStore.markSynced(previousPendingIds)
             check(CloudProfileSyncSettings.markUbuntuReady(endpoint)) {
-                "Impossibile memorizzare il passaggio a Ubuntu"
+                "Impossibile memorizzare il collegamento a Lyra"
             }
             _status.value = _status.value.copy(
                 restoring = false,
@@ -359,7 +359,7 @@ object CloudProfileSync {
     /** Same anonymous profile identity; never exposes the bearer to UI or playlist code. */
     internal fun playlistOwner(): String? = if (::appContext.isInitialized &&
         CloudProfileSyncSettings.enabled.value && CloudProfileSyncSettings.ready.value &&
-        app.lyra.music.genre.GenreClassifierSettings.connectionEnabled.value
+        app.lyra.music.genre.GenreClassifierSettings.isConfigured()
     ) ensureIdentity().listenerId else null
 
     internal fun playlistState(): String? = if (::appContext.isInitialized)
@@ -397,6 +397,7 @@ object CloudProfileSync {
         payload: JSONObject?,
         rootOverride: String? = null,
     ): JSONObject {
+        val checkedToken = app.lyra.music.genre.GenreClassifierSettings.token()
         val connection = openConnection(method, path, identity, rootOverride)
         try {
             if (payload != null) {
@@ -410,6 +411,12 @@ object CloudProfileSync {
             }
             val code = connection.responseCode
             val response = readBody(connection)
+            if (code == 401 || code == 403 || code == 426) {
+                checkedToken?.let {
+                    app.lyra.music.genre.GenreClassifierSettings.recordAuthorization(it, false)
+                }
+            }
+            if (code == 426) throw IllegalStateException("Aggiorna Lyra per collegarti al server.")
             if (path.startsWith("/v3/") && code !in 200..299) {
                 val reason=runCatching { JSONObject(response).optString("detail") }.getOrNull()
                     ?.takeIf { it.length<=80 && it.matches(Regex("[a-z_]+")) }
@@ -437,6 +444,9 @@ object CloudProfileSync {
         identity: Identity,
         rootOverride: String? = null,
     ): HttpURLConnection {
+        check(app.lyra.music.genre.GenreClassifierSettings.isConfigured()) {
+            "Inserisci e verifica il token Telegram nelle Impostazioni"
+        }
         val root = rootOverride ?: CloudProfileSyncSettings.backendEndpoint.trimEnd('/')
         return (URL(root + path).openConnection() as HttpURLConnection).apply {
             requestMethod = method
@@ -450,7 +460,13 @@ object CloudProfileSync {
             setRequestProperty("Accept", "application/json")
             setRequestProperty("Authorization", "Bearer ${identity.secret}")
             setRequestProperty("X-Lyra-Listener", identity.listenerId)
+            if (root.trimEnd('/') == app.lyra.music.genre.GenreClassifierSettings.SERVER_URL.trimEnd('/')) {
+                app.lyra.music.genre.GenreClassifierSettings.token()
+                    ?.takeIf { it.startsWith("lyra_") }
+                    ?.let { setRequestProperty("X-Lyra-Access-Token", it) }
+            }
             setRequestProperty("X-Lyra-App-Version", BuildConfig.VERSION_NAME)
+            setRequestProperty("X-Lyra-App-Version-Code", BuildConfig.VERSION_CODE.toString())
             setRequestProperty("X-Lyra-Installation", installationId())
             setRequestProperty("X-Lyra-Device-Model", (android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL).filter { it.code in 32..126 }.take(80))
             if (path.startsWith("/v3/")) setRequestProperty("X-Lyra-Capabilities", "server_queue_v1,boundary_commit_v1,offline_fallback_v1")

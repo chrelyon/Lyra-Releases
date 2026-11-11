@@ -52,6 +52,7 @@ import app.lyra.music.analytics.AnalyticsOutcome
 import app.lyra.music.analytics.AnalyticsRow
 import app.lyra.music.analytics.ListeningAnalytics
 import app.lyra.music.analytics.ListeningAnalyticsRepository
+import app.lyra.music.genre.GenreClassifierSettings
 import app.lyra.music.cloud.CloudProfileSyncSettings
 import app.lyra.music.cloud.CloudProfileSync
 import app.lyra.music.personalization.ListeningEventStore
@@ -71,6 +72,14 @@ private enum class ChartChoice(val title: String, val description: String) {
 
 @Composable
 fun ListeningAnalyticsScreen(onBack: () -> Unit) {
+    val authorized by GenreClassifierSettings.authorized.collectAsStateWithLifecycle()
+    if (!authorized) {
+        Column(Modifier.fillMaxSize().padding(18.dp)) {
+            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Indietro") }
+            Text("Verifica il token Telegram nelle Impostazioni per aprire le statistiche.")
+        }
+        return
+    }
     // La lettura locale è reattiva; i dati server Lyra sono invece uno snapshot remoto esplicito.
     val localTracks by ListeningProfileStore.stats.collectAsStateWithLifecycle()
     val localEvents by ListeningEventStore.events.collectAsStateWithLifecycle()

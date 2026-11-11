@@ -37,6 +37,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import app.lyra.music.genre.GenreClassifierSettings
 import app.lyra.music.playback.PlaybackViewModel
 import app.lyra.music.playback.AutomaticPlaylistManager
 import app.lyra.music.youtube.repository.AutomaticPlaylistCatalog
@@ -49,6 +50,14 @@ fun DiscoverScreen(
     onBack: () -> Unit,
     viewModel: DiscoverViewModel = viewModel(),
 ) {
+    val authorized by GenreClassifierSettings.authorized.collectAsStateWithLifecycle()
+    if (!authorized) {
+        Column(Modifier.fillMaxSize().padding(18.dp)) {
+            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Indietro") }
+            Text("Verifica il token Telegram nelle Impostazioni per usare Scopri.")
+        }
+        return
+    }
     val selectedFolderId by viewModel.selectedFolderId.collectAsStateWithLifecycle()
     val automaticSource by AutomaticPlaylistManager.source.collectAsStateWithLifecycle()
     val loading by playbackViewModel.automaticPlaylistLoading.collectAsStateWithLifecycle()

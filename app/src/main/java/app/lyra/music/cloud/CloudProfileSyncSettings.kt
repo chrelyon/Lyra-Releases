@@ -40,12 +40,12 @@ object CloudProfileSyncSettings {
         _ready.value = configured.isNotBlank() && prefs.getString(KEY_READY_URL, "") == configured
         // First upgrade activates Ubuntu backup automatically; later keep the user's ON/OFF choice.
         val previouslyInitialized = prefs.getBoolean(KEY_LOCAL_ONLY, false)
-        val effective = configured.isNotBlank() && GenreClassifierSettings.connectionEnabled.value &&
-            (!previouslyInitialized || prefs.getBoolean(KEY_ENABLED, true))
+        val desired = !previouslyInitialized || prefs.getBoolean(KEY_ENABLED, true)
+        val effective = configured.isNotBlank() && GenreClassifierSettings.isConfigured() && desired
         prefs.edit()
             .putBoolean(KEY_LOCAL_ONLY, true)
             .putBoolean(KEY_V2_INITIALIZED, true)
-            .putBoolean(KEY_ENABLED, effective)
+            .putBoolean(KEY_ENABLED, desired)
             .apply()
         _enabled.value = effective
     }
@@ -65,7 +65,7 @@ object CloudProfileSyncSettings {
     /** Suspend/resume background backups without changing the user backup preference. */
     fun onServerConnectionChanged() {
         if (!::appContext.isInitialized) return
-        val shouldRun = endpointConfigured && GenreClassifierSettings.connectionEnabled.value &&
+        val shouldRun = endpointConfigured && GenreClassifierSettings.isConfigured() &&
             appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).getBoolean(KEY_ENABLED, true)
         _enabled.value = shouldRun
         if (shouldRun) {
@@ -97,7 +97,7 @@ object CloudProfileSyncSettings {
 
     fun setEnabled(value: Boolean) {
         if (!::appContext.isInitialized) return
-        val effective = value && endpointConfigured && GenreClassifierSettings.connectionEnabled.value
+        val effective = value && endpointConfigured && GenreClassifierSettings.isConfigured()
         appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit().putBoolean(KEY_ENABLED, effective).apply()
         _enabled.value = effective

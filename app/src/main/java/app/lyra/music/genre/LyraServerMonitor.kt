@@ -1,5 +1,6 @@
 package app.lyra.music.genre
 
+import android.os.SystemClock
 import app.lyra.music.diagnostics.LyraLog as Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -23,18 +24,34 @@ object LyraServerMonitor {
     private val _status = MutableStateFlow(Status.CHECKING)
     val status: StateFlow<Status> = _status.asStateFlow()
     private var started = false
+    @Volatile private var lastAuthorizationAttempt = 0L
+    private var checkedToken: String? = null
+    private const val AUTHORIZATION_INTERVAL_MS = 60_000L
 
     @Synchronized fun start() {
         if (started) return
         started = true
         scope.launch {
             while (true) {
-                if (!GenreClassifierSettings.connectionEnabled.value) {
+                if (!GenreClassifierSettings.connectionEnabled.value || !GenreClassifierSettings.hasToken.value) {
                     change(Status.DISABLED)
                 } else {
-                    val checked = GenreClassifierClient.probeHealth()
+                    val token = GenreClassifierSettings.token()
+                    val now = SystemClock.elapsedRealtime()
+                    val checked = if (token != checkedToken || now - lastAuthorizationAttempt >= AUTHORIZATION_INTERVAL_MS) {
+                        checkedToken = token
+                        lastAuthorizationAttempt = now
+                        GenreClassifierClient.checkConnection()
+                    } else if (GenreClassifierSettings.authorized.value) {
+                        GenreClassifierClient.probeHealth()
+                    } else {
+                        GenreClassifierClient.ConnectionCheck.Failed("Accesso non autorizzato")
+                    }
+                    if (checked is GenreClassifierClient.ConnectionCheck.Failed) {
+                        token?.let { GenreClassifierSettings.recordAuthorization(it, false) }
+                    }
                     change(when {
-                        !GenreClassifierSettings.connectionEnabled.value -> Status.DISABLED
+                        !GenreClassifierSettings.connectionEnabled.value || !GenreClassifierSettings.hasToken.value -> Status.DISABLED
                         checked is GenreClassifierClient.ConnectionCheck.Ready -> Status.ONLINE
                         else -> Status.OFFLINE
                     })
@@ -55,7 +72,8 @@ object LyraServerMonitor {
     }
 
     fun refresh() {
-        if (!GenreClassifierSettings.connectionEnabled.value) change(Status.DISABLED)
+        lastAuthorizationAttempt = 0L
+        if (!GenreClassifierSettings.connectionEnabled.value || !GenreClassifierSettings.hasToken.value) change(Status.DISABLED)
         else if (_status.value == Status.DISABLED) change(Status.CHECKING)
         requests.trySend(Unit)
     }

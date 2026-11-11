@@ -4,6 +4,7 @@ import android.content.Context
 import java.io.File
 
 internal object DiagnosticFiles {
+    val lock = Any()
     private const val DIRECTORY = "diagnostics"
 
     fun directory(context: Context): File =

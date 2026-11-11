@@ -235,7 +235,7 @@ object YouTubeAuthorizationManager {
      * Never expose/store e-mail, OAuth token or account identifier in a backup.
      */
     fun accountCacheKeyOrNull(): String? {
-        if (!_state.value.isAuthorized) return null
+        if (!_state.value.isAuthorized || _state.value.isChecking || _state.value.isAuthorizing) return null
         val account = authorizedAccount
         val principal = if (account != null) {
             account.type + ":" + account.name.lowercase()
@@ -257,7 +257,7 @@ object YouTubeAuthorizationManager {
         return Base64.encodeToString(digest, Base64.NO_WRAP or Base64.URL_SAFE)
     }
 
-    fun accessTokenOrNull(): String? = accessToken
+    fun accessTokenOrNull(): String? = accessToken.takeIf { _state.value.isAuthorized && !_state.value.isChecking && !_state.value.isAuthorizing }
 
     /** Revoca l'accesso Google concesso a Lyra e cancella lo stato locale. */
     fun disconnect(onComplete: (Boolean) -> Unit = {}) {
@@ -388,6 +388,8 @@ object YouTubeAuthorizationManager {
             isAuthorizing = false,
             isAuthorized = true,
             authorizationGeneration = nextGeneration,
+            profileName = if (changedAccount || !previousState.isAuthorized) null else previousState.profileName,
+            profilePictureUrl = if (changedAccount || !previousState.isAuthorized) null else previousState.profilePictureUrl,
             errorMessage = null,
         )
         YouTubeLikesManager.onAuthorizationChanged()

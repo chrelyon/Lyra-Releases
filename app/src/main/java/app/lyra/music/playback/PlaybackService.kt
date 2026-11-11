@@ -504,6 +504,9 @@ class PlaybackService : MediaLibraryService() {
             params: LibraryParams?,
         ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
             ensureGooglePlaylistCacheIsolation()
+            if (requiresDiscoveryAccess(parentId) && !app.lyra.music.genre.GenreClassifierSettings.isConfigured()) {
+                return Futures.immediateFuture(LibraryResult.ofItemList(emptyList<MediaItem>(), params))
+            }
             if (parentId == AUTO_LIBRARY_ROOT_ID) {
                 // Android Auto raccomanda pochi nodi di primo livello
                 // (tipicamente <= 4). Evitiamo quindi di mettere tutte le
@@ -515,7 +518,7 @@ class PlaybackService : MediaLibraryService() {
                 val items = buildList {
                     favorite?.let { add(buildPlaylistMediaItem(it)) }
                     add(buildAllPlaylistsMediaItem(regularPlaylists.size + SavedAutomaticPlaylistStore.asPlaylists().size))
-                    add(buildDiscoverMediaItem())
+                    if (app.lyra.music.genre.GenreClassifierSettings.isConfigured()) add(buildDiscoverMediaItem())
                     add(buildLocalLibraryMediaItem())
                 }
 
@@ -2291,10 +2294,18 @@ class PlaybackService : MediaLibraryService() {
         }
     }
 
+    private fun requiresDiscoveryAccess(mediaId: String): Boolean =
+        mediaId == AUTO_DISCOVER_ROOT_ID || mediaId == AUTO_AUTOMATIC_ROOT_ID || mediaId == AUTO_MIX_ID ||
+            mediaId.startsWith(AUTO_DISCOVER_FOLDER_PREFIX) || mediaId.startsWith(AUTO_DISCOVER_GROUP_PREFIX) ||
+            mediaId.startsWith(AUTO_AUTOMATIC_PRESET_PREFIX)
+
     private suspend fun resolveRequestedContext(
         requested: MediaItem,
     ): AutoSongContext {
         val mediaId = requested.mediaId
+        check(!requiresDiscoveryAccess(mediaId) || app.lyra.music.genre.GenreClassifierSettings.isConfigured()) {
+            "Verifica il token Telegram nelle Impostazioni"
+        }
         val searchQuery = requested.requestMetadata.searchQuery
             ?.trim()
             ?.takeIf { it.isNotBlank() }

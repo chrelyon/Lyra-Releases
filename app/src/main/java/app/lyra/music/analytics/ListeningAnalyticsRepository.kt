@@ -42,7 +42,7 @@ object ListeningAnalyticsRepository {
     suspend fun cloudSnapshot(): AnalyticsSnapshot {
         val root = CloudProfileSync.readAnalyticsSnapshot()
         val profile = root.optJSONObject("profile")
-            ?: throw IllegalStateException("Ubuntu non contiene ancora un profilo musicale")
+            ?: throw IllegalStateException("Lyra non contiene ancora un profilo musicale")
         val tracks = profile.optJSONArray("tracks")
         val events = root.optJSONArray("events")
         return AnalyticsSnapshot(
@@ -88,7 +88,7 @@ object ListeningAnalyticsRepository {
                     )
                 }
             },
-            source = "Ubuntu · backup musicale",
+            source = "Lyra · backup musicale",
             updatedAtMs = profile.optLong("updatedAtMs", root.optLong("updatedAtMs", 0L)),
         )
     }

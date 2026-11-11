@@ -95,6 +95,7 @@ fun HomeScreen(
     val syncWarning by viewModel.syncWarning.collectAsStateWithLifecycle()
     val serverConnectionEnabled by GenreClassifierSettings.connectionEnabled.collectAsStateWithLifecycle()
     val serverStatus by LyraServerMonitor.status.collectAsStateWithLifecycle()
+    val serverAuthorized by GenreClassifierSettings.authorized.collectAsStateWithLifecycle()
     val authorizationState by
         viewModel.authorizationState.collectAsStateWithLifecycle()
     var favoritesUnavailable by remember { mutableStateOf(false) }
@@ -213,6 +214,7 @@ fun HomeScreen(
                 title = "Scopri",
                 icon = { Icon(Icons.Rounded.Explore, contentDescription = null) },
                 onClick = onOpenDiscover,
+                enabled = serverAuthorized,
                 modifier = Modifier.weight(1f),
             )
             HomeFeatureCard(
@@ -252,10 +254,12 @@ fun HomeScreen(
                 title = if (dailyMixLoading) "Creo il mix..." else "Mix per me",
                 icon = { Icon(Icons.Rounded.AutoAwesome, contentDescription = null) },
                 onClick = onStartDailyMix,
+                enabled = serverAuthorized && !dailyMixLoading,
                 modifier = Modifier.weight(1f),
             )
             HomeFeatureCard(
                 title = "Preferiti",
+                enabled = authorizationState.isAuthorized && !authorizationState.isChecking && !authorizationState.isAuthorizing,
                 icon = { Icon(Icons.Rounded.Favorite, contentDescription = null) },
                 onClick = {
                     if (favoritesPlaylistId != null) onPlaylistClick(favoritesPlaylistId)
@@ -404,9 +408,11 @@ private fun HomeFeatureCard(
     icon: @Composable () -> Unit,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
 ) {
     Card(
         onClick = onClick,
+        enabled = enabled,
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),

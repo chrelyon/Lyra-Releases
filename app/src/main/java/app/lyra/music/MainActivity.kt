@@ -8,11 +8,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -101,9 +97,6 @@ class MainActivity : ComponentActivity() {
                         playbackViewModel.automaticPlaylistLoading.collectAsStateWithLifecycle()
                     val automaticPlaylistError by
                         playbackViewModel.automaticPlaylistError.collectAsStateWithLifecycle()
-                    var showCrashReportDialog by remember {
-                        mutableStateOf(DiagnosticsReporter.hasPendingCrashReport(this@MainActivity))
-                    }
                     var availableUpdate by remember {
                         mutableStateOf<GitHubUpdateChecker.UpdateInfo?>(null)
                     }
@@ -327,41 +320,7 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
-                    if (showCrashReportDialog) {
-                        AlertDialog(
-                            onDismissRequest = { showCrashReportDialog = false },
-                            title = { Text("Lyra si è arrestata in modo anomalo") },
-                            text = {
-                                Text(
-                                    "È disponibile un report diagnostico. Puoi inviarlo a " +
-                                        DiagnosticsReporter.SUPPORT_EMAIL +
-                                        " per analizzare il problema."
-                                )
-                            },
-                            confirmButton = {
-                                Button(
-                                    onClick = {
-                                        val opened = DiagnosticsReporter.sharePendingCrashReport(
-                                            this@MainActivity
-                                        )
-                                        if (opened) {
-                                            DiagnosticsReporter.markPendingCrashHandled(
-                                                this@MainActivity
-                                            )
-                                            showCrashReportDialog = false
-                                        }
-                                    }
-                                ) {
-                                    Text("Invia via email")
-                                }
-                            },
-                            dismissButton = {
-                                TextButton(onClick = { showCrashReportDialog = false }) {
-                                    Text("Non ora")
-                                }
-                            },
-                        )
-                    }
+
 
                 }
             }
@@ -374,6 +333,7 @@ class MainActivity : ComponentActivity() {
         LyraLog.d("LYRA_UPDATE", "automatic check trigger=$updateCheckTrigger")
         // Recheck Ubuntu connectivity on every foreground entry.
         LyraServerMonitor.refresh()
+        DiagnosticsReporter.scheduleUpload(this)
     }
 
     override fun onResume() {

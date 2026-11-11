@@ -16,8 +16,6 @@ import javax.crypto.spec.GCMParameterSpec
 /** Fixed Lyra Funnel hostname; per-device token remains encrypted and user configurable. */
 object GenreClassifierSettings {
     private const val PREFS = "lyra_genre_classifier_v1"
-    private const val KEY_ENABLED = "enabled"
-    private const val KEY_ENDPOINT = "endpoint" // legacy setting, ignored after migration
     private const val KEY_CONNECTION_ENABLED = "connection_enabled_v1"
     const val SERVER_URL = "https://vivisochat-lab.tail056f21.ts.net:10000"
     private const val KEY_ENCRYPTED_TOKEN = "encrypted_token"
@@ -28,11 +26,13 @@ object GenreClassifierSettings {
     private val _endpoint = MutableStateFlow(SERVER_URL)
     private val _connectionEnabled = MutableStateFlow(true)
     private val _hasToken = MutableStateFlow(false)
+    private val _authorized = MutableStateFlow(false)
 
     val enabled: StateFlow<Boolean> = _enabled.asStateFlow()
     val connectionEnabled: StateFlow<Boolean> = _connectionEnabled.asStateFlow()
     val endpoint: StateFlow<String> = _endpoint.asStateFlow()
     val hasToken: StateFlow<Boolean> = _hasToken.asStateFlow()
+    val authorized: StateFlow<Boolean> = _authorized.asStateFlow()
 
     fun initialize(appContext: Context) {
         context = appContext.applicationContext
@@ -41,24 +41,31 @@ object GenreClassifierSettings {
         _endpoint.value = SERVER_URL
         _connectionEnabled.value = prefs.getBoolean(KEY_CONNECTION_ENABLED, true)
         _hasToken.value = readToken() != null
-        // Keep the user's genre-filter preference even when server access is disabled.
-        _enabled.value = prefs.getBoolean(KEY_ENABLED, false) && _hasToken.value
+        // Authorization is verified again after each process restart.
+        _enabled.value = false
+        _authorized.value = false
     }
 
     fun isConfigured(): Boolean =
-        _connectionEnabled.value && _hasToken.value
+        _connectionEnabled.value && _authorized.value
 
     /** Only the bearer token may be changed, not the server URL. */
     fun saveToken(newToken: String): Boolean {
         if (!::context.isInitialized) return false
         if (newToken.isNotBlank()) {
             val token = newToken.trim()
-            if (token.length < 40) return false
+            if (!token.startsWith("lyra_") || token.length !in 45..120) return false
+            if (token != readToken()) {
+                _authorized.value = false
+                _enabled.value = false
+            }
             val sealed = runCatching { encrypt(token) }.getOrNull() ?: return false
             context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
                 .putString(KEY_ENCRYPTED_TOKEN, sealed).apply()
         }
         _hasToken.value = readToken() != null
+        app.lyra.music.cloud.CloudProfileSyncSettings.onServerConnectionChanged()
+        app.lyra.music.genre.LyraServerMonitor.refresh()
         return _hasToken.value
     }
 
@@ -67,16 +74,26 @@ object GenreClassifierSettings {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putBoolean(KEY_CONNECTION_ENABLED, value).apply()
         _connectionEnabled.value = value
+        if (!value) {
+            _authorized.value = false
+            _enabled.value = false
+        }
         app.lyra.music.cloud.CloudProfileSyncSettings.onServerConnectionChanged()
         app.lyra.music.genre.LyraServerMonitor.refresh()
     }
 
-    fun setEnabled(value: Boolean) {
-        if (!::context.isInitialized) return
-        val effective = value && _hasToken.value
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .putBoolean(KEY_ENABLED, effective).apply()
-        _enabled.value = effective
+    @Synchronized
+    fun recordAuthorization(checkedToken: String, allowed: Boolean): Boolean {
+        if (checkedToken != readToken()) return false
+        val enabled = allowed && _connectionEnabled.value
+        val changed = _authorized.value != enabled
+        _authorized.value = enabled
+        _enabled.value = enabled
+        if (changed) {
+            app.lyra.music.cloud.CloudProfileSyncSettings.onServerConnectionChanged()
+            if (enabled) app.lyra.music.diagnostics.DiagnosticsReporter.scheduleUpload(context)
+        }
+        return enabled
     }
 
     fun token(): String? = if (::context.isInitialized) readToken() else null
@@ -89,7 +106,7 @@ object GenreClassifierSettings {
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, bytes.copyOfRange(0, 12)))
         String(cipher.doFinal(bytes.copyOfRange(12, bytes.size)), Charsets.UTF_8)
-            .takeIf { it.length >= 40 }
+            .takeIf { it.startsWith("lyra_") && it.length in 45..120 }
     }.getOrNull()
 
     private fun encrypt(value: String): String {
