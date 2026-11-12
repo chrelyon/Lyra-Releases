@@ -19,7 +19,7 @@ import java.net.URL
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 
-/** Delivery and email forwarding are handled by the authenticated Lyra server. */
+/** Reports are retained exclusively by the authenticated Lyra server. */
 class DiagnosticsUploadWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         val context = applicationContext
@@ -44,8 +44,10 @@ class DiagnosticsUploadWorker(context: Context, params: WorkerParameters) : Coro
             connection.connectTimeout = 10_000
             connection.readTimeout = 15_000
             connection.setRequestProperty("Authorization", "Bearer $token")
+            connection.setRequestProperty("X-Lyra-Installation", app.lyra.music.cloud.CloudProfileSync.installationId())
             connection.setRequestProperty("X-Lyra-App-Version", BuildConfig.VERSION_NAME)
             connection.setRequestProperty("X-Lyra-App-Version-Code", BuildConfig.VERSION_CODE.toString())
+            connection.setRequestProperty("X-Lyra-Device-Model", (android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL).take(80))
             connection.setRequestProperty("Content-Type", "application/json")
             connection.doOutput = true
             if (!DiagnosticsSettings.isLoggingEnabled(context) || !GenreClassifierSettings.isConfigured() ||

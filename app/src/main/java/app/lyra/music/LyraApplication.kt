@@ -30,6 +30,7 @@ class LyraApplication : Application() {
     override fun onCreate() {
         super.onCreate()
 
+        app.lyra.music.cloud.DeviceBackup.completePendingRestore(this)
         DiagnosticsSettings.initialize(this)
         LyraLog.initialize(this)
         AudioSettings.initialize(this)
@@ -43,7 +44,6 @@ class LyraApplication : Application() {
         }
         PersonalizationSettings.initialize(this)
         GenreClassifierSettings.initialize(this)
-        LyraServerMonitor.start()
         ListeningHistoryStore.initialize(this)
         ListeningEventStore.initialize(this)
         ListeningProfileStore.initialize(this)
@@ -53,6 +53,7 @@ class LyraApplication : Application() {
         AutomaticPlaylistVarietyStore.initialize(this)
         DiscoverySettings.initialize(this)
         DiscoveryQualityStore.initialize(this)
+        LyraServerMonitor.start()
         CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
             YouTubeLikesManager.changes.collect { change ->
                 ListeningProfileStore.setLiked(change.song, change.liked)

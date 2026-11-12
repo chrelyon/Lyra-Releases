@@ -75,6 +75,7 @@ object GenreClassifierClient {
             GenreClassifierSettings.recordAuthorization(token, false)
             ConnectionCheck.Failed(
                 when (error) {
+                    is DeviceBindingException -> "Token assegnato a un altro dispositivo. Usa il ripristino Telegram o richiedi un nuovo token."
                     is UnauthorizedException -> "Token non valido o revocato."
                     is UpdateRequiredException -> "Aggiornare Lyra: versione non ammessa dal server."
                     is java.net.SocketTimeoutException -> "Server non raggiungibile: tempo di attesa scaduto."
@@ -146,6 +147,7 @@ object GenreClassifierClient {
     }
 
     private class UnauthorizedException : Exception()
+    private class DeviceBindingException : Exception()
     private class UpdateRequiredException : Exception()
 
     private fun request(endpoint: String, path: String, bearer: String?, body: JSONObject?): JSONObject {
@@ -155,6 +157,7 @@ object GenreClassifierClient {
             connection.connectTimeout = CONNECT_TIMEOUT_MS
             connection.readTimeout = READ_TIMEOUT_MS
             connection.useCaches = false
+            connection.setRequestProperty("X-Lyra-Installation", app.lyra.music.cloud.CloudProfileSync.installationId())
             connection.setRequestProperty("X-Lyra-App-Version", BuildConfig.VERSION_NAME)
             connection.setRequestProperty("X-Lyra-App-Version-Code", BuildConfig.VERSION_CODE.toString())
             connection.setRequestProperty("X-Lyra-Region", app.lyra.music.youtube.repository.DiscoverySettings.regionMode.value.name)
@@ -172,6 +175,8 @@ object GenreClassifierClient {
             if (status == 401 || status == 403 || status == 426) {
                 bearer?.let { GenreClassifierSettings.recordAuthorization(it, false) }
                 if (status == 426) throw UpdateRequiredException()
+                val reason = connection.errorStream?.bufferedReader()?.use { it.readText().take(2048) }.orEmpty()
+                if (reason.contains("token_bound_to_another_device")) throw DeviceBindingException()
                 throw UnauthorizedException()
             }
             if (status !in 200..299) throw IllegalStateException("HTTP $status")

@@ -388,6 +388,18 @@ object ListeningProfileStore {
     }
 
     @Synchronized
+    internal fun applySharedSnapshot(
+        shared: JSONObject, sent: JSONObject, reset: Boolean = false,
+        beforeApply: (JSONObject) -> Unit, afterApply: () -> Unit,
+    ) {
+        val merged = if (reset) JSONObject(shared.toString()) else
+            app.lyra.music.cloud.MusicSnapshotMerge.merge(shared, cloudSnapshotJson(), sent)
+        beforeApply(merged)
+        restoreCloudSnapshotJson(merged)
+        afterApply()
+    }
+
+    @Synchronized
     fun restoreCloudSnapshotJson(snapshot: JSONObject) {
         if (!::appContext.isInitialized) return
         require(snapshot.optInt("schemaVersion", 0) in 1..2) { "Schema profilo cloud non supportato" }
@@ -442,9 +454,9 @@ object ListeningProfileStore {
             .take(MAX_TRACKS)
             .associateByTo(LinkedHashMap()) { it.song.id }
         _stats.value = trimmed
-        save(trimmed.values.toList())
-        saveDoubleMap(KEY_ARTIST_PENALTIES, artistPenalties)
-        saveDoubleMap(KEY_ARTIST_BOOSTS, artistBoosts)
+        save(trimmed.values.toList(), durable = true)
+        saveDoubleMap(KEY_ARTIST_PENALTIES, artistPenalties, durable = true)
+        saveDoubleMap(KEY_ARTIST_BOOSTS, artistBoosts, durable = true)
     }
 
     fun cloudSnapshotJson(): JSONObject {
@@ -559,7 +571,7 @@ object ListeningProfileStore {
         }.getOrDefault(emptyList())
     }
 
-    private fun save(stats: List<TrackStat>) {
+    private fun save(stats: List<TrackStat>, durable: Boolean = false) {
         val array = JSONArray()
         stats.forEach { stat ->
             array.put(
@@ -578,8 +590,9 @@ object ListeningProfileStore {
                     .put("contextScores", JSONObject(stat.contextScores))
             )
         }
-        appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .edit().putString(KEY_STATS, array.toString()).apply()
+        val editor = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit().putString(KEY_STATS, array.toString())
+        if (durable) check(editor.commit()) { "Impossibile salvare il profilo ripristinato" } else editor.apply()
     }
 
     private fun loadDoubleMap(key: String): Map<String, Double> {
@@ -592,9 +605,10 @@ object ListeningProfileStore {
         }.getOrDefault(emptyMap())
     }
 
-    private fun saveDoubleMap(key: String, values: Map<String, Double>) {
-        appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .edit().putString(key, JSONObject(values).toString()).apply()
+    private fun saveDoubleMap(key: String, values: Map<String, Double>, durable: Boolean = false) {
+        val editor = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit().putString(key, JSONObject(values).toString())
+        if (durable) check(editor.commit()) { "Impossibile salvare i gusti ripristinati" } else editor.apply()
     }
 
     private fun Song.toJson() = JSONObject()

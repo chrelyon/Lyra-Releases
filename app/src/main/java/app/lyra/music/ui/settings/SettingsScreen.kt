@@ -1,7 +1,5 @@
 package app.lyra.music.ui.settings
 
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Context
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -589,13 +587,13 @@ fun SettingsScreen(
                     Spacer(Modifier.width(14.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Backup musicale Lyra",
+                            text = "Backup Lyra",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold,
                         )
                         Text(
                             text = if (CloudProfileSyncSettings.endpointConfigured) {
-                                "Salva solo il profilo musicale Lyra: brani, artisti, ascolti, skip, Like/Dislike e segnali usati dall’algoritmo. Nessun nome, e-mail, UID Google, password, cookie o token OAuth viene salvato."
+                                "Salva configurazioni, cronologia, preferiti musicali e playlist locali. Il token Lyra è protetto nel backup cifrato. Per Google è necessario un nuovo accesso; i file audio e i permessi Android non sono inclusi."
                             } else {
                                 "Il collegamento a Lyra è configurato automaticamente."
                             },
@@ -622,13 +620,13 @@ fun SettingsScreen(
                     modifier = Modifier.padding(top = 10.dp),
                 )
 
-                if (cloudSyncEnabled && serverAuthorized) {
+                Column {
                     Text(
                         text = when {
                             cloudStatus.restoring -> "Ripristino del profilo musicale in corso…"
                             cloudStatus.syncing -> "Backup musicale in corso…"
                             cloudStatus.error != null -> "Ultimo tentativo: ${cloudStatus.error}"
-                            cloudStatus.lastRestoreAtMs > 0L -> "Profilo musicale ripristinato."
+                            cloudStatus.lastRestoreAtMs > 0L -> "Ripristino completato. Riavvia Lyra per applicare tutte le impostazioni."
                             cloudStatus.lastSuccessAtMs > 0L -> "Backup musicale aggiornato."
                             else -> "In attesa del primo backup musicale."
                         },
@@ -646,14 +644,14 @@ fun SettingsScreen(
                     }
                     OutlinedButton(
                         onClick = CloudProfileSync::syncNow,
-                        enabled = !cloudStatus.syncing && !cloudStatus.restoring,
+                        enabled = cloudSyncEnabled && serverAuthorized && !cloudStatus.syncing && !cloudStatus.restoring,
                         modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
                     ) { Text("Backup ora") }
                     OutlinedButton(
                         onClick = { showRecoveryCodeDialog = true },
                         enabled = !cloudStatus.restoring,
                         modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                    ) { Text("Codice di recupero") }
+                    ) { Text("Come recuperare il backup") }
                     OutlinedButton(
                         onClick = {
                             recoveryCodeInput = ""
@@ -664,9 +662,10 @@ fun SettingsScreen(
                         modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                     ) { Text("Ripristina da codice") }
                     TextButton(
+                        enabled = serverAuthorized,
                         onClick = { showDeleteCloudConfirmation = true },
                         modifier = Modifier.fillMaxWidth().alpha(if (serverAuthorized) 1f else 0.45f),
-                    ) { Text("Elimina backup musicale") }
+                    ) { Text("Elimina profilo condiviso") }
                 }
             }
         }
@@ -1304,29 +1303,11 @@ fun SettingsScreen(
     }
 
     if (showRecoveryCodeDialog) {
-        val recoveryCode = CloudProfileSync.recoveryCode().orEmpty()
         AlertDialog(
             onDismissRequest = { showRecoveryCodeDialog = false },
-            title = { Text("Codice di recupero Lyra") },
-            text = {
-                Column {
-                    Text("Per il recupero tramite Telegram invia /ripristina al bot dal tuo account. Riceverai un codice monouso, valido 10 minuti. Il codice LYRA2 esistente resta compatibile.")
-                    Text(
-                        text = recoveryCode,
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(top = 12.dp),
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    clipboard.setPrimaryClip(ClipData.newPlainText("Codice recupero Lyra", recoveryCode))
-                    cloudUiMessage = "Codice di recupero copiato negli appunti."
-                    showRecoveryCodeDialog = false
-                }) { Text("Copia") }
-            },
-            dismissButton = { TextButton(onClick = { showRecoveryCodeDialog = false }) { Text("Chiudi") } },
+            title = { Text("Recupero tramite Telegram") },
+            text = { Text("Invia /ripristina al bot dal tuo account Telegram. Se hai più dispositivi, scegli il token da recuperare seguendo le istruzioni del bot. Riceverai un codice monouso valido 10 minuti: inseriscilo in Ripristina da codice. Il token ripristinato deve essere ancora autorizzato.") },
+            confirmButton = { TextButton(onClick = { showRecoveryCodeDialog = false }) { Text("OK") } },
         )
     }
 
@@ -1336,7 +1317,7 @@ fun SettingsScreen(
             title = { Text("Ripristina backup Lyra") },
             text = {
                 Column {
-                    Text("Invia /ripristina al bot Telegram dal tuo account e inserisci qui il codice ricevuto. Verrà recuperato il backup musicale del proprietario del token. Account Google e libreria richiedono un nuovo accesso verificato.")
+                    Text("Invia /ripristina al bot Telegram dal tuo account e inserisci qui il codice ricevuto. Verranno ripristinati configurazioni, dati musicali e token del dispositivo scelto nel bot. I dati locali saranno sostituiti e sarà conservata una copia locale di sicurezza. Google richiede un nuovo accesso e i file audio vanno selezionati di nuovo. Se avevi più dispositivi, il bot ti farà scegliere quale recuperare.")
                     OutlinedTextField(
                         value = recoveryCodeInput,
                         onValueChange = { recoveryCodeInput = it },
@@ -1363,8 +1344,8 @@ fun SettingsScreen(
     if (showDeleteCloudConfirmation) {
         AlertDialog(
             onDismissRequest = { showDeleteCloudConfirmation = false },
-            title = { Text("Eliminare il backup remoto attivo?") },
-            text = { Text("Verranno eliminati da Lyra il profilo musicale e gli eventi associati all’identificatore Lyra corrente. I dati locali restano sul telefono.") },
+            title = { Text("Eliminare il profilo condiviso?") },
+            text = { Text("Il profilo musicale condiviso da tutti i tuoi dispositivi sarà eliminato dal server e i relativi token saranno revocati. Backup e segnalazioni resteranno conservati. I dati locali restano sul telefono.") },
             confirmButton = {
                 TextButton(onClick = {
                     CloudProfileSyncSettings.setEnabled(false)

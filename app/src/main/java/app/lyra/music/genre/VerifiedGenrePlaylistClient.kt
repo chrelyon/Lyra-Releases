@@ -79,6 +79,7 @@ object VerifiedGenrePlaylistClient {
             connection.doOutput = true
             connection.setRequestProperty("Content-Type", "application/json")
             connection.setRequestProperty("Authorization", "Bearer $token")
+            connection.setRequestProperty("X-Lyra-Installation", app.lyra.music.cloud.CloudProfileSync.installationId())
             connection.setRequestProperty("X-Lyra-App-Version", BuildConfig.VERSION_NAME)
             connection.setRequestProperty("X-Lyra-App-Version-Code", BuildConfig.VERSION_CODE.toString())
             connection.setRequestProperty("X-Lyra-Region", app.lyra.music.youtube.repository.DiscoverySettings.regionMode.value.name)
@@ -183,6 +184,7 @@ object VerifiedGenrePlaylistClient {
             connection.doOutput = true
             connection.setRequestProperty("Content-Type", "application/json")
             connection.setRequestProperty("Authorization", "Bearer $token")
+            connection.setRequestProperty("X-Lyra-Installation", app.lyra.music.cloud.CloudProfileSync.installationId())
             connection.setRequestProperty("X-Lyra-App-Version", BuildConfig.VERSION_NAME)
             connection.setRequestProperty("X-Lyra-App-Version-Code", BuildConfig.VERSION_CODE.toString())
             connection.setRequestProperty("X-Lyra-Region", app.lyra.music.youtube.repository.DiscoverySettings.regionMode.value.name)

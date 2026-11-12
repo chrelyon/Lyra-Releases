@@ -152,7 +152,7 @@ object ListeningEventStore {
      * locali non ancora inviati hanno precedenza in caso di ID duplicato.
      */
     @Synchronized
-    fun restoreCloudEventsJson(array: JSONArray?) {
+    fun restoreCloudEventsJson(array: JSONArray?, replaceSynced: Boolean = false, discardPending: Boolean = false) {
         if (!::appContext.isInitialized || array == null) return
         val cloud = buildList {
             for (index in 0 until array.length()) {
@@ -184,7 +184,7 @@ object ListeningEventStore {
         }
         val merged = LinkedHashMap<String, Event>()
         cloud.forEach { merged[it.id] = it }
-        _events.value.forEach { merged[it.id] = it }
+        _events.value.forEach { if (!discardPending && (!replaceSynced || !it.synced)) merged[it.id] = it }
         val updated = trimForRetention(merged.values.sortedBy { it.timestampMs })
         _events.value = updated
         save(updated)

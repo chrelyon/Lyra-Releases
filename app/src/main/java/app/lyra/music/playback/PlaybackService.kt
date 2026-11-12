@@ -60,6 +60,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
@@ -486,6 +488,7 @@ class PlaybackService : MediaLibraryService() {
             browser: MediaSession.ControllerInfo,
             params: LibraryParams?,
         ): ListenableFuture<LibraryResult<MediaItem>> {
+            app.lyra.music.genre.LyraServerMonitor.refresh()
             Log.d("LYRA_AUTO", "libraryRoot controller=${controllerLabel(session, browser)}")
             return Futures.immediateFuture(
                 LibraryResult.ofItem(
@@ -504,33 +507,38 @@ class PlaybackService : MediaLibraryService() {
             params: LibraryParams?,
         ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
             ensureGooglePlaylistCacheIsolation()
+            val googleGeneration = YouTubeAuthorizationManager.state.value.authorizationGeneration
             if (requiresDiscoveryAccess(parentId) && !app.lyra.music.genre.GenreClassifierSettings.isConfigured()) {
                 return Futures.immediateFuture(LibraryResult.ofItemList(emptyList<MediaItem>(), params))
             }
             if (parentId == AUTO_LIBRARY_ROOT_ID) {
-                // Android Auto raccomanda pochi nodi di primo livello
-                // (tipicamente <= 4). Evitiamo quindi di mettere tutte le
-                // playlist direttamente nella root: Preferiti resta una
-                // scorciatoia e il resto vive sotto "Le mie playlist".
-                val cachedPlaylists = YouTubeLibraryCache.load()?.playlists.orEmpty()
-                val favorite = cachedPlaylists.firstOrNull(::isFavoritesPlaylist)
-                val regularPlaylists = cachedPlaylists.filterNot(::isFavoritesPlaylist)
-                val items = buildList {
-                    favorite?.let { add(buildPlaylistMediaItem(it)) }
-                    add(buildAllPlaylistsMediaItem(regularPlaylists.size + SavedAutomaticPlaylistStore.asPlaylists().size))
-                    if (app.lyra.music.genre.GenreClassifierSettings.isConfigured()) add(buildDiscoverMediaItem())
-                    add(buildLocalLibraryMediaItem())
+                return Futures.immediateFuture(LibraryResult.ofItemList(
+                    AutoLibraryPolicy.root(autoLibraryState()).map(::buildAutoEntry), params))
+            }
+            if (parentId == AUTO_HOME_ID) {
+                return Futures.immediateFuture(LibraryResult.ofItemList(buildAutoHomeItems(), params))
+            }
+            if ((parentId == AUTO_ALL_PLAYLISTS_ID || parentId == AUTO_FAVORITES_ID) &&
+                !YouTubeAuthorizationManager.state.value.isAuthorized) {
+                return Futures.immediateFuture(LibraryResult.ofItemList(emptyList<MediaItem>(), params))
+            }
+            if (parentId == AUTO_FAVORITES_ID) {
+                val future = SettableFuture.create<LibraryResult<ImmutableList<MediaItem>>>()
+                val generation = YouTubeAuthorizationManager.state.value.authorizationGeneration
+                serviceScope.launch {
+                    val content = runCatching {
+                        val snapshot = YouTubeLibraryCache.load() ?: withContext(Dispatchers.IO) {
+                            musicRepository.getLibrarySnapshot()
+                        }
+                        val favorite = snapshot.playlists.firstOrNull(::isFavoritesPlaylist)
+                        favorite?.let { loadPlaylistForAuto(it.id) }
+                    }.getOrNull()
+                    val current = YouTubeAuthorizationManager.state.value
+                    val items = if (current.isAuthorized && current.authorizationGeneration == generation && content != null)
+                        buildSongMediaItems(content).forBrowser(session, browser, page, pageSize) else emptyList()
+                    future.set(LibraryResult.ofItemList(items, params))
                 }
-
-                Log.d(
-                    "LYRA_AUTO",
-                    "browseRoot items=${items.size} cachedPlaylists=${cachedPlaylists.size} " +
-                        "regularPlaylists=${regularPlaylists.size} favorite=${favorite != null} " +
-                        "controller=${controllerLabel(session, browser)}"
-                )
-                return Futures.immediateFuture(
-                    LibraryResult.ofItemList(items, params)
-                )
+                return future
             }
 
             if (parentId == AUTO_ALL_PLAYLISTS_ID) {
@@ -540,8 +548,7 @@ class PlaybackService : MediaLibraryService() {
                     .filterNot(::isFavoritesPlaylist)
                 if (cachedPlaylists.isNotEmpty()) {
                     val items = buildList {
-                        add(buildHistoryRootMediaItem())
-                        addAll(SavedAutomaticPlaylistStore.asPlaylists().map(::buildPlaylistMediaItem))
+                        add(buildFavoritesMediaItem())
                         addAll(cachedPlaylists.map(::buildPlaylistMediaItem))
                     }
                         .forBrowser(session, browser, page, pageSize)
@@ -560,7 +567,10 @@ class PlaybackService : MediaLibraryService() {
                         } else {
                             withContext(Dispatchers.IO) {
                                 musicRepository.getLibrarySnapshot()
-                            }.also(YouTubeLibraryCache::save).playlists
+                            }.also { snapshot ->
+                                val current = YouTubeAuthorizationManager.state.value
+                                if (current.isAuthorized && current.authorizationGeneration == googleGeneration) YouTubeLibraryCache.save(snapshot)
+                            }.playlists
                         }
                     }.onFailure { error ->
                         Log.e(
@@ -575,11 +585,15 @@ class PlaybackService : MediaLibraryService() {
                         "browseAllPlaylists source=network playlists=${playlists.size} " +
                             "controller=${controllerLabel(session, browser)}"
                     )
+                    val currentGoogle = YouTubeAuthorizationManager.state.value
+                    if (!currentGoogle.isAuthorized || currentGoogle.authorizationGeneration != googleGeneration) {
+                        future.set(LibraryResult.ofItemList(emptyList<MediaItem>(), params))
+                        return@launch
+                    }
                     future.set(
                         LibraryResult.ofItemList(
                             buildList {
-                                add(buildHistoryRootMediaItem())
-                                addAll(SavedAutomaticPlaylistStore.asPlaylists().map(::buildPlaylistMediaItem))
+                                add(buildFavoritesMediaItem())
                                 addAll(playlists.filterNot(::isFavoritesPlaylist).map(::buildPlaylistMediaItem))
                             }.forBrowser(session, browser, page, pageSize),
                             params,
@@ -829,7 +843,7 @@ class PlaybackService : MediaLibraryService() {
                             YouTubeLibraryCache.load()
                                 ?.playlists
                                 .orEmpty()
-                                .count { !isFavoritesPlaylist(it) } + SavedAutomaticPlaylistStore.asPlaylists().size
+                                .count { !isFavoritesPlaylist(it) }
                         ),
                         null,
                     )
@@ -837,6 +851,9 @@ class PlaybackService : MediaLibraryService() {
             }
 
             when (mediaId) {
+                AUTO_HOME_ID -> return Futures.immediateFuture(LibraryResult.ofItem(buildAutoHomeMediaItem(), null))
+                AUTO_RANDOM_ID -> return Futures.immediateFuture(LibraryResult.ofItem(buildRandomMediaItem(), null))
+                AUTO_FAVORITES_ID -> return Futures.immediateFuture(LibraryResult.ofItem(buildFavoritesMediaItem(), null))
                 AUTO_DISCOVER_ROOT_ID -> return Futures.immediateFuture(
                     LibraryResult.ofItem(buildDiscoverMediaItem(), null)
                 )
@@ -1076,7 +1093,7 @@ class PlaybackService : MediaLibraryService() {
                 ?: 0
             val requested = mediaItems[requestedIndex]
             val isKnownBrowserSelection = autoSongContexts.containsKey(requested.mediaId) ||
-                requested.mediaId == AUTO_MIX_ID ||
+                requested.mediaId == AUTO_MIX_ID || requested.mediaId == AUTO_RANDOM_ID ||
                 requested.mediaId.startsWith(AUTO_AUTOMATIC_PRESET_PREFIX)
             val requestedSearchQuery = requested.requestMetadata.searchQuery
                 ?.trim()
@@ -1505,6 +1522,28 @@ class PlaybackService : MediaLibraryService() {
             }
         }
 
+        serviceScope.launch {
+            var loadedGoogleGeneration = Long.MIN_VALUE
+            combine(app.lyra.music.genre.GenreClassifierSettings.authorized,
+                app.lyra.music.genre.LyraServerMonitor.status, YouTubeAuthorizationManager.state) { _, _, _ ->
+                autoLibraryState()
+            }.distinctUntilChanged().collect { state ->
+                ensureGooglePlaylistCacheIsolation()
+                refreshAutoLibrary()
+                if (state.googleAuthorized && loadedGoogleGeneration != state.googleGeneration) {
+                    loadedGoogleGeneration = state.googleGeneration
+                    serviceScope.launch {
+                        val snapshot = runCatching { withContext(Dispatchers.IO) { musicRepository.getLibrarySnapshot() } }.getOrNull()
+                        val current = YouTubeAuthorizationManager.state.value
+                        if (snapshot != null && current.isAuthorized && current.authorizationGeneration == state.googleGeneration) {
+                            YouTubeLibraryCache.save(snapshot)
+                            refreshAutoLibrary()
+                        }
+                    }
+                }
+            }
+        }
+        serviceScope.launch { ListeningHistoryStore.entries.collect { refreshAutoLibrary() } }
         mainHandler.post(positionCheckpoint)
         Log.d("LYRA_EXTERNAL", "serviceReady externalControls=true")
     }
@@ -1636,6 +1675,57 @@ class PlaybackService : MediaLibraryService() {
         return mediaSession
     }
 
+    private fun autoLibraryState() = AutoLibraryPolicy.State(
+        serverAuthorized = app.lyra.music.genre.GenreClassifierSettings.isConfigured(),
+        serverOnline = app.lyra.music.genre.LyraServerMonitor.status.value == app.lyra.music.genre.LyraServerMonitor.Status.ONLINE,
+        googleAuthorized = YouTubeAuthorizationManager.state.value.isAuthorized,
+        googleGeneration = YouTubeAuthorizationManager.state.value.authorizationGeneration,
+    )
+
+    private fun buildAutoEntry(entry: AutoLibraryPolicy.Entry): MediaItem = when (entry) {
+        AutoLibraryPolicy.Entry.HOME -> buildAutoHomeMediaItem()
+        AutoLibraryPolicy.Entry.DEVICE -> buildLocalLibraryMediaItem()
+        AutoLibraryPolicy.Entry.RECENT -> buildHistoryRootMediaItem()
+        AutoLibraryPolicy.Entry.YTM, AutoLibraryPolicy.Entry.PLAYLISTS -> buildAllPlaylistsMediaItem(
+            if (YouTubeAuthorizationManager.state.value.isAuthorized) YouTubeLibraryCache.load()?.playlists.orEmpty().count { !isFavoritesPlaylist(it) } else 0)
+        AutoLibraryPolicy.Entry.RANDOM -> buildRandomMediaItem()
+        AutoLibraryPolicy.Entry.DISCOVER -> buildDiscoverMediaItem()
+        AutoLibraryPolicy.Entry.FAVORITES -> buildFavoritesMediaItem()
+    }
+
+    private fun buildAutoHomeItems(): List<MediaItem> = AutoLibraryPolicy.home(autoLibraryState()).map(::buildAutoEntry) +
+        if (SavedAutomaticPlaylistStore.asPlaylists().isNotEmpty()) listOf(buildSavedAutomaticRootMediaItem()) else emptyList()
+
+    private fun buildAutoHomeMediaItem(): MediaItem {
+        val state = autoLibraryState()
+        val online = state.serverAuthorized && state.serverOnline
+        return MediaItem.Builder().setMediaId(AUTO_HOME_ID).setMediaMetadata(MediaMetadata.Builder()
+            .setTitle("Home").setSubtitle((if (online) "🟢 " else "🔴 ") + AutoLibraryPolicy.serverLabel(state))
+            .setArtworkUri(autoArtworkUri(null, if (online) R.drawable.auto_server_online else R.drawable.auto_server_offline))
+            .setIsBrowsable(true).setIsPlayable(false).build()).build()
+    }
+
+    private fun buildRandomMediaItem(): MediaItem = MediaItem.Builder().setMediaId(AUTO_RANDOM_ID)
+        .setMediaMetadata(MediaMetadata.Builder().setTitle("Play Casuale")
+            .setSubtitle("Server non attivo · algoritmo locale")
+            .setArtworkUri(autoArtworkUri(null, R.drawable.auto_server_offline))
+            .setIsBrowsable(false).setIsPlayable(true).build()).build()
+
+    private fun buildFavoritesMediaItem(): MediaItem = MediaItem.Builder().setMediaId(AUTO_FAVORITES_ID)
+        .setMediaMetadata(MediaMetadata.Builder().setTitle("Preferiti")
+            .setSubtitle("YouTube Music").setArtworkUri(autoArtworkUri(null, R.drawable.auto_art_favorites))
+            .setIsBrowsable(true).setIsPlayable(false).build()).build()
+
+    private fun refreshAutoLibrary() {
+        val session = mediaSession ?: return
+        session.notifyChildrenChanged(AUTO_LIBRARY_ROOT_ID, AutoLibraryPolicy.root(autoLibraryState()).size, null)
+        session.notifyChildrenChanged(AUTO_HOME_ID, buildAutoHomeItems().size, null)
+        session.notifyChildrenChanged(AUTO_DISCOVER_ROOT_ID, if (autoLibraryState().serverAuthorized) DiscoverMenu.entries.size else 0, null)
+        session.notifyChildrenChanged(AUTO_HISTORY_ROOT_ID, ListeningHistoryStore.entries.value.size, null)
+        session.notifyChildrenChanged(AUTO_ALL_PLAYLISTS_ID, if (autoLibraryState().googleAuthorized)
+            YouTubeLibraryCache.load()?.playlists.orEmpty().count { !isFavoritesPlaylist(it) } + 1 else 0, null)
+    }
+
     private fun buildLibraryRoot(): MediaItem {
         return MediaItem.Builder()
             .setMediaId(AUTO_LIBRARY_ROOT_ID)
@@ -1655,7 +1745,7 @@ class PlaybackService : MediaLibraryService() {
             .setMediaId(AUTO_ALL_PLAYLISTS_ID)
             .setMediaMetadata(
                 MediaMetadata.Builder()
-                    .setTitle("Le mie playlist")
+                    .setTitle("Playlist YouTube Music")
                     .setSubtitle(
                         count.takeIf { it > 0 }?.let {
                             if (it == 1) "1 playlist" else "$it playlist"
@@ -1716,7 +1806,7 @@ class PlaybackService : MediaLibraryService() {
         .setMediaId(AUTO_HISTORY_ROOT_ID)
         .setMediaMetadata(
             MediaMetadata.Builder()
-                .setTitle("Cronologia")
+                .setTitle("Recenti")
                 .setSubtitle(
                     ListeningHistoryStore.entries.value.size.takeIf { it > 0 }?.let { "$it ascolti recenti" }
                         ?: "Nessun ascolto recente"
@@ -1877,7 +1967,7 @@ class PlaybackService : MediaLibraryService() {
         .setMediaMetadata(
             MediaMetadata.Builder()
                 .setTitle("Scopri")
-                .setSubtitle("Playlist automatiche, mix personali e categorie musicali aggiornate")
+                .setSubtitle((if (autoLibraryState().serverOnline) "🟢 " else "🔴 ") + AutoLibraryPolicy.serverLabel(autoLibraryState()) + " · playlist, mix e categorie")
                 .setArtworkUri(autoArtworkUri(null, R.drawable.auto_art_discover))
                 .setExtras(compactFolderStyleExtras())
                 .setIsBrowsable(true)
@@ -1983,6 +2073,7 @@ class PlaybackService : MediaLibraryService() {
         }
 
         val extras = Bundle(params?.extras ?: Bundle()).apply {
+            putBoolean("android.media.browse.SEARCH_SUPPORTED", true)
             // Playlist/cartelle come griglia con artwork; brani come lista,
             // piu' vicina alla gerarchia visiva della UI telefono. L'host
             // resta libero di adattare la resa al veicolo.
@@ -2209,6 +2300,7 @@ class PlaybackService : MediaLibraryService() {
             )
         }
 
+        check(!isYouTubeMusicDiscovery || app.lyra.music.genre.GenreClassifierSettings.isConfigured()) { "Verifica il token Telegram nelle Impostazioni" }
         val content = withContext(Dispatchers.IO) {
             musicRepository.getPlaylist(playlistId)
         }
@@ -2295,6 +2387,7 @@ class PlaybackService : MediaLibraryService() {
     }
 
     private fun requiresDiscoveryAccess(mediaId: String): Boolean =
+        mediaId.startsWith(AUTO_PLAYLIST_PREFIX + YouTubeMusicRepository.DISCOVER_MUSIC_PLAYLIST_PREFIX) ||
         mediaId == AUTO_DISCOVER_ROOT_ID || mediaId == AUTO_AUTOMATIC_ROOT_ID || mediaId == AUTO_MIX_ID ||
             mediaId.startsWith(AUTO_DISCOVER_FOLDER_PREFIX) || mediaId.startsWith(AUTO_DISCOVER_GROUP_PREFIX) ||
             mediaId.startsWith(AUTO_AUTOMATIC_PRESET_PREFIX)
@@ -2303,55 +2396,9 @@ class PlaybackService : MediaLibraryService() {
         requested: MediaItem,
     ): AutoSongContext {
         val mediaId = requested.mediaId
-        check(!requiresDiscoveryAccess(mediaId) || app.lyra.music.genre.GenreClassifierSettings.isConfigured()) {
-            "Verifica il token Telegram nelle Impostazioni"
-        }
         val searchQuery = requested.requestMetadata.searchQuery
             ?.trim()
             ?.takeIf { it.isNotBlank() }
-
-        if (mediaId.startsWith(AUTO_DISCOVER_GROUP_PREFIX)) {
-            val key = Uri.decode(mediaId.removePrefix(AUTO_DISCOVER_GROUP_PREFIX))
-            val (folderId, groupId) = parseDiscoverGroupKey(key)
-                ?: throw IllegalArgumentException("Gruppo Scopri non valido")
-            if (DiscoveryDirectMixRepository.isDirectGroup(folderId, groupId)) {
-                AutomaticPlaylistManager.clear()
-                val result = DiscoveryDirectMixRepository().build(folderId, groupId)
-                val first = result.songs.first()
-                return AutoSongContext(
-                    song = first,
-                    queueTitle = result.title,
-                    queueSongs = result.songs,
-                    index = 0,
-                )
-            }
-        }
-
-        if (mediaId == AUTO_MIX_ID) {
-            val result = PersonalizedMixEngine.build()
-            AutomaticPlaylistManager.clear()
-            return AutoSongContext(
-                song = result.songs.first(),
-                queueTitle = result.title,
-                queueSongs = result.songs,
-                index = 0,
-                allowSmartContinuation = false,
-            )
-        }
-
-        if (mediaId.startsWith(AUTO_AUTOMATIC_PRESET_PREFIX)) {
-            val presetId = Uri.decode(mediaId.removePrefix(AUTO_AUTOMATIC_PRESET_PREFIX))
-            val result = AutomaticPlaylistManager.startFromPreset(presetId)
-            val first = result.songs.firstOrNull()
-                ?: throw IllegalStateException("Playlist Automatica senza brani")
-            return AutoSongContext(
-                song = first,
-                queueTitle = result.title,
-                queueSongs = result.songs,
-                index = 0,
-                automaticSeed = true,
-            )
-        }
 
         // Google Assistant/Android Auto possono inviare playFromSearch con un
         // mediaId che coincide ancora con il brano corrente. La query vocale ha
@@ -2384,6 +2431,63 @@ class PlaybackService : MediaLibraryService() {
                     index = 0,
                 )
             }
+        }
+
+        check(!requiresDiscoveryAccess(mediaId) || app.lyra.music.genre.GenreClassifierSettings.isConfigured()) {
+            "Verifica il token Telegram nelle Impostazioni"
+        }
+
+        if (mediaId.startsWith(AUTO_DISCOVER_GROUP_PREFIX)) {
+            val key = Uri.decode(mediaId.removePrefix(AUTO_DISCOVER_GROUP_PREFIX))
+            val (folderId, groupId) = parseDiscoverGroupKey(key)
+                ?: throw IllegalArgumentException("Gruppo Scopri non valido")
+            if (DiscoveryDirectMixRepository.isDirectGroup(folderId, groupId)) {
+                AutomaticPlaylistManager.clear()
+                val result = DiscoveryDirectMixRepository().build(folderId, groupId)
+                val first = result.songs.first()
+                return AutoSongContext(
+                    song = first,
+                    queueTitle = result.title,
+                    queueSongs = result.songs,
+                    index = 0,
+                )
+            }
+        }
+
+        if (mediaId == AUTO_RANDOM_ID) {
+            AutomaticPlaylistManager.clear()
+            val device = loadLocalSongs()
+            val history = if (PersonalizationSettings.useHistory.value) ListeningProfileStore.topSongs(200) else emptyList()
+            val likes = if (PersonalizationSettings.useLikes.value) ListeningProfileStore.recentLiked(100) else emptyList()
+            val result = AutomaticPlaylistManager.startRandom((device + history + likes).distinctBy { it.id })
+            val first = result.songs.firstOrNull() ?: error("Nessun brano disponibile")
+            return AutoSongContext(song = first, queueTitle = result.title, queueSongs = result.songs,
+                index = 0, automaticSeed = true)
+        }
+        if (mediaId == AUTO_MIX_ID) {
+            val result = PersonalizedMixEngine.build()
+            AutomaticPlaylistManager.clear()
+            return AutoSongContext(
+                song = result.songs.first(),
+                queueTitle = result.title,
+                queueSongs = result.songs,
+                index = 0,
+                allowSmartContinuation = false,
+            )
+        }
+
+        if (mediaId.startsWith(AUTO_AUTOMATIC_PRESET_PREFIX)) {
+            val presetId = Uri.decode(mediaId.removePrefix(AUTO_AUTOMATIC_PRESET_PREFIX))
+            val result = AutomaticPlaylistManager.startFromPreset(presetId)
+            val first = result.songs.firstOrNull()
+                ?: throw IllegalStateException("Playlist Automatica senza brani")
+            return AutoSongContext(
+                song = first,
+                queueTitle = result.title,
+                queueSongs = result.songs,
+                index = 0,
+                automaticSeed = true,
+            )
         }
 
         if (mediaId.isBlank()) {
@@ -3568,6 +3672,9 @@ class PlaybackService : MediaLibraryService() {
         const val SESSION_ACTIVITY_REQUEST_CODE = 3008
         const val AUTO_COMMAND_TOGGLE_LIKE = "lyra.auto.toggle_like"
         const val AUTO_AUTH_WAIT_MS = 8_000L
+        const val AUTO_HOME_ID = "lyra:auto:home"
+        const val AUTO_RANDOM_ID = "lyra:auto:random"
+        const val AUTO_FAVORITES_ID = "lyra:auto:favorites"
         const val AUTO_LIBRARY_ROOT_ID = "lyra:auto:root"
         const val AUTO_ALL_PLAYLISTS_ID = "lyra:auto:all-playlists"
         const val AUTO_DISCOVER_ROOT_ID = "lyra:auto:discover"
