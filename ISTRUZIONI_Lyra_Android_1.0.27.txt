@@ -1,0 +1,54 @@
+Lyra Android 1.0.27 — istruzioni di applicazione
+
+Base richiesta: sorgenti Android 1.0.26 esatti (versionCode 64).
+Release risultante: 1.0.27 (versionCode 65).
+
+File inclusi:
+- Lyra-Android-1.0.27.patch: modifiche sorgenti, regole backup Android, test, consolidamento Markdown e PDF aggiornato.
+- LYRA_DOCUMENTAZIONE_1.0.27.md: documentazione Markdown unica.
+- LYRA_TECHNICAL_REFERENCE.pdf: riferimento tecnico aggiornato.
+- Questo file.
+
+APPLICAZIONE DA POWERSHELL
+
+1. Apri PowerShell nella radice del repository Lyra-Android e verifica:
+   git status --short --branch
+   Select-String -Path .\app\build.gradle.kts -Pattern 'versionCode|versionName'
+
+   La base deve essere 1.0.26 / codice 64 e la working tree deve essere pulita.
+
+2. Estrai Lyra-Android-1.0.27.patch nella cartella superiore al repository
+   (oppure modifica il percorso nel comando seguente).
+
+3. Controlla:
+   git apply --check --ignore-whitespace ..\Lyra-Android-1.0.27.patch
+
+4. Applica:
+   git apply --ignore-whitespace ..\Lyra-Android-1.0.27.patch
+
+5. Controlla:
+   git diff --check
+   git diff --stat
+   Select-String -Path .\app\build.gradle.kts -Pattern 'versionCode|versionName'
+
+   Risultato atteso: versionName 1.0.27, versionCode 65.
+
+6. Esegui i test JVM disponibili e una build Release completa con il keystore
+   locale del proprietario. La patch non contiene APK firmato né keystore.
+
+7. Prove sul telefono:
+   - attivare/disattivare “Usa la libreria del dispositivo nelle playlist automatiche”;
+   - verificare Play Casuale, i rifornimenti e Play Casuale in Android Auto;
+   - verificare che Dispositivo continui sempre a mostrare e riprodurre i file locali;
+   - verificare backup/ripristino musicale Lyra;
+   - verificare che backup Android e trasferimento dispositivo non copino l'identità
+     listener, i log diagnostici o i journal temporanei.
+
+8. Se build e prove sono positive:
+   git add -A
+   git commit -m "Release Android 1.0.27 - backup hardening and local library preference"
+   git push origin main
+
+Non usare git push --force.
+Non applicare la patch su una base diversa dalla 1.0.26 senza prima riallinearla.
+Non includere keystore, password, token, local.properties o configurazioni private.

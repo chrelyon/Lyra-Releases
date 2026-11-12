@@ -12,6 +12,7 @@ object PersonalizationSettings {
     private const val KEY_DISCOVERY_LEVEL = "discovery_level"
     private const val KEY_USE_HISTORY = "use_history"
     private const val KEY_USE_LIKES = "use_likes"
+    private const val KEY_USE_DEVICE_LIBRARY = "use_device_library_in_automatic_playlists"
     private const val KEY_LEARN_SKIPS = "learn_skips"
     private const val KEY_AVOID_REPEATS = "avoid_repeats"
     private const val KEY_CONTINUE_SIMILAR = "continue_similar"
@@ -41,6 +42,10 @@ object PersonalizationSettings {
     private val _useLikes = MutableStateFlow(true)
     val useLikes: StateFlow<Boolean> = _useLikes.asStateFlow()
 
+    /** Controls device-library use by automatic playlists only; manual Device browsing is unaffected. */
+    private val _useDeviceLibrary = MutableStateFlow(true)
+    val useDeviceLibrary: StateFlow<Boolean> = _useDeviceLibrary.asStateFlow()
+
     private val _learnFromSkips = MutableStateFlow(true)
     val learnFromSkips: StateFlow<Boolean> = _learnFromSkips.asStateFlow()
 
@@ -65,6 +70,7 @@ object PersonalizationSettings {
         }.getOrDefault(DiscoveryLevel.BALANCED)
         _useHistory.value = prefs.getBoolean(KEY_USE_HISTORY, true)
         _useLikes.value = prefs.getBoolean(KEY_USE_LIKES, true)
+        _useDeviceLibrary.value = prefs.getBoolean(KEY_USE_DEVICE_LIBRARY, true)
         _learnFromSkips.value = prefs.getBoolean(KEY_LEARN_SKIPS, true)
         _avoidRepeats.value = prefs.getBoolean(KEY_AVOID_REPEATS, true)
         _continueSimilar.value = prefs.getBoolean(KEY_CONTINUE_SIMILAR, true)
@@ -74,6 +80,8 @@ object PersonalizationSettings {
     fun setEnabled(value: Boolean) = update(KEY_ENABLED, value) { _enabled.value = value }
     fun setUseHistory(value: Boolean) = update(KEY_USE_HISTORY, value) { _useHistory.value = value }
     fun setUseLikes(value: Boolean) = update(KEY_USE_LIKES, value) { _useLikes.value = value }
+    fun setUseDeviceLibrary(value: Boolean) =
+        update(KEY_USE_DEVICE_LIBRARY, value) { _useDeviceLibrary.value = value }
     fun setLearnFromSkips(value: Boolean) = update(KEY_LEARN_SKIPS, value) { _learnFromSkips.value = value }
     fun setAvoidRepeats(value: Boolean) = update(KEY_AVOID_REPEATS, value) { _avoidRepeats.value = value }
     fun setContinueSimilar(value: Boolean) = update(KEY_CONTINUE_SIMILAR, value) { _continueSimilar.value = value }

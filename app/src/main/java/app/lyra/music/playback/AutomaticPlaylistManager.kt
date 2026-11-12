@@ -191,13 +191,17 @@ object AutomaticPlaylistManager {
     /** A local recommendation session; it never requires the Lyra server or a Google login. */
     suspend fun startRandom(candidates: List<Song>): StartResult = mutex.withLock {
         val expected = generation.get()
-        val pool = candidates.distinctBy { it.id }.filterNot { ListeningProfileStore.isBlocked(it.id) }
+        val useDeviceLibrary = app.lyra.music.personalization.PersonalizationSettings.useDeviceLibrary.value
+        val pool = candidates.distinctBy { it.id }
+            .filter { useDeviceLibrary || !it.isLocal }
+            .filterNot { ListeningProfileStore.isBlocked(it.id) }
         val salt = System.nanoTime()
         val available = if (pool.isNotEmpty()) pool else {
             repository.regionalSongs()
         }
         val ranked = RecommendationEngine.rank(available.shuffled(Random(salt)),
             RecommendationEngine.SessionContext("Play Casuale", null, sessionSalt = salt))
+            .filter { useDeviceLibrary || !it.isLocal }
             .filterNot { ListeningProfileStore.isBlocked(it.id) }.distinctBy { it.id }
         check(ranked.isNotEmpty()) { "Nessun brano disponibile" }
         val queue = app.lyra.music.personalization.RegionPreferencePolicy.order(
@@ -215,9 +219,16 @@ object AutomaticPlaylistManager {
     private suspend fun localContinuation(current: Session): List<Song> {
         val expectedRemote = remote
         val seed = knownSongs.lastOrNull { !it.isLocal } ?: current.tailSeed
-        val device = try { localLibrary() } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { emptyList() }
-        val remaining = (current.randomPool + device).distinctBy { it.id }.filterNot { it.id in current.seenIds || ListeningProfileStore.isBlocked(it.id) }
-        val proposed = if (remaining.isNotEmpty() || seed.isLocal) emptyList() else try {
+        val useDeviceLibrary = app.lyra.music.personalization.PersonalizationSettings.useDeviceLibrary.value
+        val device = if (useDeviceLibrary) {
+            try { localLibrary() } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { emptyList() }
+        } else emptyList()
+        // A preference change also applies to future refills of an already-running
+        // automatic session; local songs already in the current queue are not interrupted.
+        val remaining = (current.randomPool.filter { useDeviceLibrary || !it.isLocal } + device)
+            .distinctBy { it.id }
+            .filterNot { it.id in current.seenIds || ListeningProfileStore.isBlocked(it.id) }
+        val proposed = if (remaining.isNotEmpty() || (seed.isLocal && useDeviceLibrary)) emptyList() else try {
             repository.regionalSongs()
         } catch (cancelled: CancellationException) { throw cancelled }
           catch (_: Exception) { emptyList() }
@@ -226,6 +237,7 @@ object AutomaticPlaylistManager {
             avoidArtists = current.skippedArtists, positiveArtists = current.positiveArtists,
             diversificationLevel = current.consecutiveEarlySkips)
         val ranked = RecommendationEngine.rank((remaining + proposed).shuffled(), context)
+            .filter { useDeviceLibrary || !it.isLocal }
         val fresh = app.lyra.music.personalization.RegionPreferencePolicy.order(ranked,
             app.lyra.music.youtube.repository.DiscoverySettings.regionMode.value.name)
             .filterNot { it.id in current.seenIds || ListeningProfileStore.isBlocked(it.id) }

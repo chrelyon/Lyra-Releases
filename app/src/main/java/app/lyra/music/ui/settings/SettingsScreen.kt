@@ -120,6 +120,7 @@ fun SettingsScreen(
     val discoveryLevel by PersonalizationSettings.discoveryLevel.collectAsStateWithLifecycle()
     val useHistory by PersonalizationSettings.useHistory.collectAsStateWithLifecycle()
     val useLikes by PersonalizationSettings.useLikes.collectAsStateWithLifecycle()
+    val useDeviceLibrary by PersonalizationSettings.useDeviceLibrary.collectAsStateWithLifecycle()
     val learnFromSkips by PersonalizationSettings.learnFromSkips.collectAsStateWithLifecycle()
     val avoidRepeats by PersonalizationSettings.avoidRepeats.collectAsStateWithLifecycle()
     val continueSimilar by PersonalizationSettings.continueSimilar.collectAsStateWithLifecycle()
@@ -428,6 +429,13 @@ fun SettingsScreen(
                         Text("Reimposta profilo musicale")
                     }
                 }
+
+                SettingToggleRow(
+                    title = "Usa la libreria del dispositivo nelle playlist automatiche",
+                    subtitle = "Se disattivata, Lyra non propone i brani presenti sul telefono nelle playlist automatiche. Il menu Dispositivo e la riproduzione manuale restano sempre disponibili.",
+                    checked = useDeviceLibrary,
+                    onCheckedChange = PersonalizationSettings::setUseDeviceLibrary,
+                )
 
                 SettingToggleRow(
                     title = "Continua con musica simile",

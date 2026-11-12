@@ -2456,10 +2456,13 @@ class PlaybackService : MediaLibraryService() {
 
         if (mediaId == AUTO_RANDOM_ID) {
             AutomaticPlaylistManager.clear()
-            val device = loadLocalSongs()
+            val useDeviceLibrary = PersonalizationSettings.useDeviceLibrary.value
+            val device = if (useDeviceLibrary) loadLocalSongs() else emptyList()
             val history = if (PersonalizationSettings.useHistory.value) ListeningProfileStore.topSongs(200) else emptyList()
             val likes = if (PersonalizationSettings.useLikes.value) ListeningProfileStore.recentLiked(100) else emptyList()
-            val result = AutomaticPlaylistManager.startRandom((device + history + likes).distinctBy { it.id })
+            val candidates = (device + history + likes).distinctBy { it.id }
+                .filter { useDeviceLibrary || !it.isLocal }
+            val result = AutomaticPlaylistManager.startRandom(candidates)
             val first = result.songs.firstOrNull() ?: error("Nessun brano disponibile")
             return AutoSongContext(song = first, queueTitle = result.title, queueSongs = result.songs,
                 index = 0, automaticSeed = true)

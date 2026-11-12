@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<data-extraction-rules>
+    <cloud-backup>
+        <!-- Never export the per-device listener secret or recovery challenge state. -->
+        <exclude domain="sharedpref" path="lyra_cloud_music_identity_v2.xml" />
+        <!-- Diagnostic logs/reports may contain device-specific operational details. -->
+        <exclude domain="file" path="diagnostics/" />
+        <!-- Restore journals and pre-restore snapshots are transient. -->
+        <exclude domain="file" path="lyra-device-before-restore.json" />
+        <exclude domain="file" path="lyra-device-restore.pending.json" />
+        <exclude domain="file" path="lyra-device-restore.pending.json.tmp" />
+    </cloud-backup>
+    <device-transfer>
+        <!-- Device credentials must be re-established on the destination device. -->
+        <exclude domain="sharedpref" path="lyra_cloud_music_identity_v2.xml" />
+        <exclude domain="file" path="diagnostics/" />
+        <exclude domain="file" path="lyra-device-before-restore.json" />
+        <exclude domain="file" path="lyra-device-restore.pending.json" />
+        <exclude domain="file" path="lyra-device-restore.pending.json.tmp" />
+    </device-transfer>
+</data-extraction-rules>

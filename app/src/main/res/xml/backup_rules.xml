@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <!-- Device-bound Lyra identity contains listener secret and recovery material. -->
+    <exclude domain="sharedpref" path="lyra_cloud_music_identity_v2.xml" />
+    <!-- Diagnostic logs/reports may contain device-specific operational details. -->
+    <exclude domain="file" path="diagnostics/" />
+    <!-- Restore journals and pre-restore snapshots are transient and device-specific. -->
+    <exclude domain="file" path="lyra-device-before-restore.json" />
+    <exclude domain="file" path="lyra-device-restore.pending.json" />
+    <exclude domain="file" path="lyra-device-restore.pending.json.tmp" />
+</full-backup-content>

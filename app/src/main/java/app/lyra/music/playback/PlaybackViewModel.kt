@@ -459,10 +459,15 @@ class PlaybackViewModel(
     }
 
     private suspend fun localRandomPool(): List<Song> {
-        val device = app.lyra.music.local.LocalMediaRepository(getApplication<Application>()).getSongs()
+        // This preference affects automatic playlists only. The Device screen and
+        // manual playback continue to use LocalMediaRepository without this filter.
+        val device = if (PersonalizationSettings.useDeviceLibrary.value) {
+            app.lyra.music.local.LocalMediaRepository(getApplication<Application>()).getSongs()
+        } else emptyList()
         val history = if (PersonalizationSettings.useHistory.value) ListeningProfileStore.topSongs(200) else emptyList()
         val likes = if (PersonalizationSettings.useLikes.value) ListeningProfileStore.recentLiked(100) else emptyList()
         return (device + history + likes).distinctBy { it.id }
+            .filter { PersonalizationSettings.useDeviceLibrary.value || !it.isLocal }
     }
 
     fun startRandomPlaylist() {

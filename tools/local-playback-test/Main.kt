@@ -35,6 +35,16 @@ fun main() = runBlocking {
     println("PASS diagnostics defaults and explicit opt-out; server engine follows verified token")
 
     val songs=(0 until 45).map { Song("device-$it","Music $it","Artist",200,playbackUri="content://music/$it") }
+    check(Settings.useDeviceLibrary.value) // Preserve the existing default.
+    Settings.setUseDeviceLibrary(false)
+    check(!Settings.useDeviceLibrary.value)
+    Manager.clear()
+    val deviceDisabled=Manager.startRandom(songs)
+    check(deviceDisabled.songs.none { it.isLocal })
+    check(Manager.loadMore().none { it.isLocal })
+    println("PASS device-library opt-out excludes local songs from automatic start and refill")
+    Settings.setUseDeviceLibrary(true)
+    Manager.clear()
     Manager.clear();Wire.owner=null;Wire.offline=true
     val serverCalls=Wire.requests;val searches=YouTube.searchCount
     val first=Manager.startRandom(songs)
